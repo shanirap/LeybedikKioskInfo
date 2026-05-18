@@ -1,10 +1,15 @@
 # Local tooling
 server/.hashgen/
 .build-check/
+publish/
 
 # Local uploaded/generated storage
 server/Storage/
 !server/Storage/.gitkeep
+
+# Generated frontend assets copied for publish
+server/wwwroot/*
+!server/wwwroot/.gitkeep
 
 # .NET
 bin/

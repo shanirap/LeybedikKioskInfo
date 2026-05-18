@@ -68,6 +68,29 @@ npm install
 npm run build
 ```
 
+## Publish as One Website
+
+To publish the React app and ASP.NET Core API together, run this from the repository root:
+
+```powershell
+.\publish.ps1
+```
+
+The script:
+
+- installs frontend dependencies with `npm install`
+- builds the React app
+- copies `client/dist` into `server/wwwroot`
+- publishes the ASP.NET Core app to `publish`
+
+Run the published app:
+
+```powershell
+.\publish\server.exe
+```
+
+The backend serves API routes under `/api/*` and serves the React app for browser routes.
+
 ## Verify Everything
 
 From the repository root:
