@@ -35,7 +35,7 @@ jobs:
         run: dotnet build .\server\server.csproj --no-restore
 
       - name: Test backend
-        run: dotnet test .\tests\server.Tests\server.Tests.csproj --no-build
+        run: dotnet test .\tests\server.Tests\server.Tests.csproj
 
       - name: Install frontend dependencies
         working-directory: client
