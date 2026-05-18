@@ -1,0 +1,102 @@
+:root {
+  --text: #4b5563;
+  --text-h: #111827;
+  --bg: #f7f4ed;
+  --surface: #ffffff;
+  --surface-soft: #fffbf3;
+  --border: #eadfce;
+  --code-bg: #f4efe7;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-bg: rgba(37, 99, 235, 0.1);
+  --accent-border: rgba(37, 99, 235, 0.26);
+  --gold: #f59e0b;
+  --success: #15803d;
+  --danger: #dc2626;
+  --social-bg: rgba(255, 255, 255, 0.72);
+  --shadow:
+    rgba(62, 39, 12, 0.08) 0 18px 45px -18px,
+    rgba(62, 39, 12, 0.08) 0 8px 18px -12px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+#root {
+  width: 1180px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: start;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+body {
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.13), transparent 34rem),
+    radial-gradient(circle at bottom left, rgba(245, 158, 11, 0.16), transparent 32rem),
+    var(--bg);
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: clamp(2rem, 3.2vw, 2.9rem);
+  letter-spacing: -1px;
+  line-height: 1.12;
+  margin: 18px 0 0.45rem;
+  @media (max-width: 1024px) {
+    font-size: 34px;
+    margin: 16px 0 0.4rem;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}

@@ -1,0 +1,40 @@
+# Local tooling
+server/.hashgen/
+.build-check/
+
+# Local uploaded/generated storage
+server/Storage/
+!server/Storage/.gitkeep
+
+# .NET
+bin/
+obj/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.cache
+.vs/
+.vscode/
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Node
+node_modules/
+dist/
+**/node_modules/
+**/dist/
+dist-ssr/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.sw?
+*.local

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  verify:
+    name: Build and Test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore .\server\server.csproj
+
+      - name: Build backend
+        run: dotnet build .\server\server.csproj --no-restore
+
+      - name: Test backend
+        run: dotnet test .\tests\server.Tests\server.Tests.csproj --no-build
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: client
+        run: npm run lint
+
+      - name: Test frontend
+        working-directory: client
+        run: npm test
+
+      - name: Build frontend
+        working-directory: client
+        run: npm run build
