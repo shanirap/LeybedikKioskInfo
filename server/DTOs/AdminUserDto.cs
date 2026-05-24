@@ -6,5 +6,7 @@ public record AdminUserDto(
     string Email,
     string Role,
     bool IsActive,
-    IReadOnlyCollection<InstrumentDto> Instruments
+    IReadOnlyCollection<InstrumentDto> Instruments,
+    int TotalLikesReceived,
+    int TotalUniqueDownloadsReceived
 );

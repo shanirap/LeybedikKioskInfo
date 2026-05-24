@@ -41,4 +41,5 @@ public class Material
     public string? RejectionReason { get; set; }
 
     public ICollection<MaterialLike> MaterialLikes { get; set; } = new List<MaterialLike>();
+    public ICollection<MaterialDownload> MaterialDownloads { get; set; } = new List<MaterialDownload>();
 }

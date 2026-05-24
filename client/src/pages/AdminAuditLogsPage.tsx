@@ -3,7 +3,7 @@ import { getApiErrorMessage } from '../api/apiClient'
 import { getAuditLogsPaged } from '../api/auditApi'
 import { Pager } from '../components/Pager'
 import type { AuditLogDto } from '../types/material'
-import { formatAuditAction, formatDateTime, formatEntityType } from '../utils/displayText'
+import { formatAuditAction, formatAuditDetails, formatDateTime, formatEntityType } from '../utils/displayText'
 
 const PAGE_SIZE = 50
 
@@ -86,7 +86,7 @@ export function AdminAuditLogsPage() {
                     {formatEntityType(log.entityType)}
                     {log.entityId ? ` #${log.entityId}` : ''}
                   </td>
-                  <td>{log.details ?? ''}</td>
+                  <td>{formatAuditDetails(log.details)}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,5 @@
 import axios, { type AxiosResponse } from 'axios'
-import type { MaterialDto, PagedResult } from '../types/material'
+import type { MaterialDto, PagedResult, TeacherWalletDto } from '../types/material'
 import { apiClient } from './apiClient'
 
 export async function getApprovedMaterials() {
@@ -9,6 +9,11 @@ export async function getApprovedMaterials() {
 
 export async function getMyUploadedMaterials(params?: { search?: string; page?: number; pageSize?: number }) {
   const { data } = await apiClient.get<PagedResult<MaterialDto>>('/materials/my-uploads', { params })
+  return data
+}
+
+export async function getTeacherWallet() {
+  const { data } = await apiClient.get<TeacherWalletDto>('/materials/my-wallet')
   return data
 }
 

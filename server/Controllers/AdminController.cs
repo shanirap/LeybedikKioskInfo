@@ -1,4 +1,5 @@
 using LeybedikInfoKiosk.Server.DTOs;
+using LeybedikInfoKiosk.Server.Models;
 using LeybedikInfoKiosk.Server.Security;
 using LeybedikInfoKiosk.Server.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -21,9 +22,13 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("users")]
-    public async Task<ActionResult<IReadOnlyCollection<AdminUserDto>>> GetUsers()
+    public async Task<ActionResult<IReadOnlyCollection<AdminUserDto>>> GetUsers(
+        [FromQuery] string? search,
+        [FromQuery] UserRole? role,
+        [FromQuery] int? minLikes,
+        [FromQuery] int? minDownloads)
     {
-        return Ok(await _userService.GetUsersAsync());
+        return Ok(await _userService.GetUsersAsync(search, role, minLikes, minDownloads));
     }
 
     [HttpPost("users")]

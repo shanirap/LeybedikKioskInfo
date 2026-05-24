@@ -14,8 +14,13 @@ export async function getInstruments() {
   return data
 }
 
-export async function getAdminUsers() {
-  const { data } = await apiClient.get<AdminUserDto[]>('/admin/users')
+export async function getAdminUsers(params?: {
+  search?: string
+  role?: 'Admin' | 'Teacher'
+  minLikes?: number
+  minDownloads?: number
+}) {
+  const { data } = await apiClient.get<AdminUserDto[]>('/admin/users', { params })
   return data
 }
 

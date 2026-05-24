@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatAuditAction,
+  formatAuditDetails,
   formatDate,
   formatEntityType,
   formatMaterialLevel,
@@ -18,7 +19,17 @@ describe('display text helpers', () => {
     expect(formatMaterialLevel('Beginner')).toBe('מתחילים')
     expect(formatMaterialLevel('Advanced')).toBe('מתקדמים')
     expect(formatAuditAction('ApproveMaterial')).toBe('אישור חומר')
+    expect(formatAuditAction('ActivateInstrument')).toBe('הפעלת כלי')
+    expect(formatAuditAction('DeactivateUser')).toBe('השבתת משתמש')
     expect(formatEntityType('Instrument')).toBe('כלי נגינה')
+  })
+
+  it('translates legacy English audit details to Hebrew', () => {
+    expect(formatAuditDetails('Approved material Rhythm Basics.')).toBe('אושר החומר: Rhythm Basics.')
+    expect(formatAuditDetails('Created Teacher user teacher@test.local.')).toBe(
+      'נוצר משתמש Teacher: teacher@test.local.',
+    )
+    expect(formatAuditDetails('עודכן חומר מאושר: כותרת.')).toBe('עודכן חומר מאושר: כותרת.')
   })
 
   it('falls back to the original value for unknown audit metadata', () => {

@@ -39,7 +39,7 @@ describe('user and instrument API helpers', () => {
     await expect(getAdminInstruments()).resolves.toBe(instruments)
 
     expect(apiClient.get).toHaveBeenNthCalledWith(1, '/instruments')
-    expect(apiClient.get).toHaveBeenNthCalledWith(2, '/admin/users')
+    expect(apiClient.get).toHaveBeenNthCalledWith(2, '/admin/users', { params: undefined })
     expect(apiClient.get).toHaveBeenNthCalledWith(3, '/admin/instruments')
   })
 

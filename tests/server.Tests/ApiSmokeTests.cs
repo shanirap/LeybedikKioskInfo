@@ -1181,17 +1181,205 @@ public class ApiSmokeTests
     }
 
     [Fact]
-    public async Task Admin_CannotUpdateApprovedMaterial()
+    public async Task Admin_CanUpdateApprovedMaterial_KeepsApprovedStatus()
     {
         await using var factory = new TestApplicationFactory();
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignIn(client, "admin@test.local", "Admin123!");
+        using var form = CreateUpdateForm("Updated Approved Title", 1, "Advanced", "Updated description");
+
+        var updateResponse = await client.PutAsync("/api/admin/materials/1", form);
+
+        updateResponse.EnsureSuccessStatusCode();
+        var updated = await updateResponse.Content.ReadFromJsonAsync<MaterialDto>();
+        Assert.Equal("Updated Approved Title", updated!.Title);
+        Assert.Equal("Approved", updated.Status);
+        Assert.Equal("Advanced", updated.Level);
+    }
+
+    [Fact]
+    public async Task Admin_EditApprovedMaterial_WritesAuditLog()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+        using var form = CreateUpdateForm("Audit Approved Edit", 1);
+
+        var updateResponse = await client.PutAsync("/api/admin/materials/1", form);
+        updateResponse.EnsureSuccessStatusCode();
+
+        var auditResponse = await client.GetAsync("/api/admin/audit-logs?page=1&pageSize=20");
+        auditResponse.EnsureSuccessStatusCode();
+        var logs = await auditResponse.Content.ReadFromJsonAsync<TestPagedResult<AuditLogDto>>();
+
+        Assert.Contains(logs!.Items, log =>
+            log.Action == "UpdateMaterialByAdmin" &&
+            log.EntityId == 1 &&
+            log.Details != null &&
+            log.Details.Contains("Audit Approved Edit"));
+    }
+
+    [Fact]
+    public async Task Teacher_CannotEditApprovedMaterialThroughAdminEndpoint()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
         using var form = CreateUpdateForm("Should Fail", 1);
 
         var updateResponse = await client.PutAsync("/api/admin/materials/1", form);
 
-        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Download_SecondDownloadBySameUser_DoesNotIncreaseCount()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var firstDownload = await client.GetAsync("/api/materials/1/download");
+        firstDownload.EnsureSuccessStatusCode();
+        var secondDownload = await client.GetAsync("/api/materials/1/download");
+        secondDownload.EnsureSuccessStatusCode();
+
+        var materialsResponse = await client.GetAsync("/api/materials/approved");
+        materialsResponse.EnsureSuccessStatusCode();
+        var materials = await materialsResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+        var material = Assert.Single(materials!, item => item.Id == 1);
+
+        Assert.Equal(1, material.DownloadCount);
+    }
+
+    [Fact]
+    public async Task Download_ByAnotherTeacherUser_IncreasesUniqueCount()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+        var createResponse = await client.PostAsJsonAsync("/api/admin/users", new
+        {
+            fullName = "Teacher Two",
+            email = "teacher2@test.local",
+            password = "Teacher123!",
+            role = "Teacher",
+            isActive = true,
+            instrumentIds = new[] { 1 },
+        });
+        createResponse.EnsureSuccessStatusCode();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+        var firstDownload = await client.GetAsync("/api/materials/1/download");
+        firstDownload.EnsureSuccessStatusCode();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        await SignIn(client, "teacher2@test.local", "Teacher123!");
+        var secondDownload = await client.GetAsync("/api/materials/1/download");
+        secondDownload.EnsureSuccessStatusCode();
+
+        var materialsResponse = await client.GetAsync("/api/materials/approved");
+        materialsResponse.EnsureSuccessStatusCode();
+        var materials = await materialsResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+        var material = Assert.Single(materials!, item => item.Id == 1);
+
+        Assert.Equal(2, material.DownloadCount);
+    }
+
+    [Fact]
+    public async Task Admin_DownloadForReview_DoesNotIncreaseUniqueDownloadCount()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        var downloadResponse = await client.GetAsync("/api/admin/materials/1/download");
+        downloadResponse.EnsureSuccessStatusCode();
+
+        var materialsResponse = await client.GetAsync("/api/admin/materials?status=Approved");
+        materialsResponse.EnsureSuccessStatusCode();
+        var paged = await materialsResponse.Content.ReadFromJsonAsync<TestPagedResult<MaterialDto>>();
+        var material = Assert.Single(paged!.Items, item => item.Id == 1);
+
+        Assert.Equal(0, material.DownloadCount);
+    }
+
+    [Fact]
+    public async Task Teacher_GetWallet_ReturnsOnlyOwnMaterials()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var walletResponse = await client.GetAsync("/api/materials/my-wallet");
+        walletResponse.EnsureSuccessStatusCode();
+        var wallet = await walletResponse.Content.ReadFromJsonAsync<TeacherWalletDto>();
+
+        Assert.NotNull(wallet);
+        Assert.Equal(3, wallet.TotalMaterials);
+        Assert.All(wallet.Materials, item => Assert.Contains(item.Title, new[] { "Assigned Approved", "Unassigned Approved", "Assigned Pending" }));
+    }
+
+    [Fact]
+    public async Task AdminUsers_ReturnsEngagementStatsForTeachers()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+        var createResponse = await client.PostAsJsonAsync("/api/admin/users", new
+        {
+            fullName = "Teacher Two",
+            email = "teacher2@test.local",
+            password = "Teacher123!",
+            role = "Teacher",
+            isActive = true,
+            instrumentIds = new[] { 1 },
+        });
+        createResponse.EnsureSuccessStatusCode();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        await SignIn(client, "teacher2@test.local", "Teacher123!");
+        await client.PostAsync("/api/materials/1/like", null);
+        await client.GetAsync("/api/materials/1/download");
+
+        client.DefaultRequestHeaders.Authorization = null;
+        await SignIn(client, "admin@test.local", "Admin123!");
+        var usersResponse = await client.GetAsync("/api/admin/users");
+        usersResponse.EnsureSuccessStatusCode();
+        var users = await usersResponse.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+
+        var teacher = Assert.Single(users!, user => user.Email == "teacher@test.local");
+        var admin = Assert.Single(users, user => user.Email == "admin@test.local");
+
+        Assert.Equal(1, teacher.TotalLikesReceived);
+        Assert.Equal(1, teacher.TotalUniqueDownloadsReceived);
+        Assert.Equal(0, admin.TotalLikesReceived);
+        Assert.Equal(0, admin.TotalUniqueDownloadsReceived);
+    }
+
+    [Fact]
+    public async Task AdminUsers_RoleFilter_ReturnsOnlyTeachers()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        var response = await client.GetAsync("/api/admin/users?role=Teacher");
+        response.EnsureSuccessStatusCode();
+        var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+
+        Assert.NotEmpty(users!);
+        Assert.All(users, user => Assert.Equal("Teacher", user.Role));
     }
 
     [Fact]

@@ -17,15 +17,46 @@ public class UserService
         _auditLogService = auditLogService;
     }
 
-    public async Task<IReadOnlyCollection<AdminUserDto>> GetUsersAsync()
+    public async Task<IReadOnlyCollection<AdminUserDto>> GetUsersAsync(
+        string? search = null,
+        UserRole? role = null,
+        int? minLikes = null,
+        int? minDownloads = null)
     {
-        return await _db.Users
-            .AsNoTracking()
-            .Include(u => u.UserInstruments)
-            .ThenInclude(ui => ui.Instrument)
+        var query = _db.Users.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(u => u.FullName.Contains(term) || u.Email.Contains(term));
+        }
+
+        if (role.HasValue)
+            query = query.Where(u => u.Role == role.Value);
+
+        var users = await query
             .OrderBy(u => u.FullName)
-            .Select(u => ToDto(u))
+            .Select(u => new AdminUserDto(
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Role.ToString(),
+                u.IsActive,
+                u.UserInstruments
+                    .OrderBy(ui => ui.Instrument.Name)
+                    .Select(ui => new InstrumentDto(ui.Instrument.Id, ui.Instrument.Name, ui.Instrument.IsActive))
+                    .ToList(),
+                u.UploadedMaterials.Where(m => !m.IsDeleted).Sum(m => m.LikeCount),
+                u.UploadedMaterials.Where(m => !m.IsDeleted).Sum(m => m.DownloadCount)))
             .ToListAsync();
+
+        if (minLikes.HasValue)
+            users = users.Where(u => u.TotalLikesReceived >= minLikes.Value).ToList();
+
+        if (minDownloads.HasValue)
+            users = users.Where(u => u.TotalUniqueDownloadsReceived >= minDownloads.Value).ToList();
+
+        return users;
     }
 
     public async Task<UserCreateResult> CreateAsync(CreateUserRequest request, int actorUserId)
@@ -61,7 +92,7 @@ public class UserService
             "CreateUser",
             "User",
             user.Id,
-            $"Created {user.Role} user {user.Email}.");
+            $"נוצר משתמש {user.Role}: {user.Email}.");
 
         return UserCreateResult.Success(await GetUserDto(user.Id));
     }
@@ -112,7 +143,7 @@ public class UserService
             "UpdateUser",
             "User",
             user.Id,
-            $"Updated user {user.Email}.");
+            $"עודכן משתמש: {user.Email}.");
 
         if (wasActive != user.IsActive)
         {
@@ -121,7 +152,9 @@ public class UserService
                 user.IsActive ? "ReactivateUser" : "DeactivateUser",
                 "User",
                 user.Id,
-                $"{(user.IsActive ? "Reactivated" : "Deactivated")} user {user.Email}.");
+                user.IsActive
+                    ? $"הופעל מחדש המשתמש: {user.Email}."
+                    : $"הושבת המשתמש: {user.Email}.");
         }
 
         return UserUpdateResult.Success(await GetUserDto(id));
@@ -145,7 +178,7 @@ public class UserService
             "UpdateUserInstruments",
             "User",
             id,
-            $"Updated teacher instruments to: {string.Join(", ", request.InstrumentIds)}.");
+            $"עודכנו כלי הנגינה של המורה: {string.Join(", ", request.InstrumentIds)}.");
 
         return UserUpdateResult.Success(await GetUserDto(id));
     }
@@ -166,7 +199,7 @@ public class UserService
             "ChangePassword",
             "User",
             user.Id,
-            $"Changed password for user {user.Email}.");
+            $"שונתה סיסמה למשתמש: {user.Email}.");
 
         return PasswordChangeResult.Success();
     }
@@ -184,7 +217,7 @@ public class UserService
             "ResetUserPassword",
             "User",
             user.Id,
-            $"Reset password for user {user.Email}.");
+            $"אופסה סיסמה למשתמש: {user.Email}.");
 
         return UserUpdateResult.Success(await GetUserDto(id));
     }
@@ -227,25 +260,20 @@ public class UserService
     {
         return await _db.Users
             .AsNoTracking()
-            .Include(u => u.UserInstruments)
-            .ThenInclude(ui => ui.Instrument)
             .Where(u => u.Id == id)
-            .Select(u => ToDto(u))
+            .Select(u => new AdminUserDto(
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Role.ToString(),
+                u.IsActive,
+                u.UserInstruments
+                    .OrderBy(ui => ui.Instrument.Name)
+                    .Select(ui => new InstrumentDto(ui.Instrument.Id, ui.Instrument.Name, ui.Instrument.IsActive))
+                    .ToList(),
+                u.UploadedMaterials.Where(m => !m.IsDeleted).Sum(m => m.LikeCount),
+                u.UploadedMaterials.Where(m => !m.IsDeleted).Sum(m => m.DownloadCount)))
             .FirstAsync();
-    }
-
-    private static AdminUserDto ToDto(User user)
-    {
-        return new AdminUserDto(
-            user.Id,
-            user.FullName,
-            user.Email,
-            user.Role.ToString(),
-            user.IsActive,
-            user.UserInstruments
-                .OrderBy(ui => ui.Instrument.Name)
-                .Select(ui => new InstrumentDto(ui.Instrument.Id, ui.Instrument.Name, ui.Instrument.IsActive))
-                .ToList());
     }
 
     private static string NormalizeEmail(string email)

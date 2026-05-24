@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import {
   createAdminUser,
   getAdminInstruments,
@@ -10,6 +11,7 @@ import {
   updateAdminUserInstruments,
 } from '../api/instrumentsApi'
 import { adminUsers, instruments } from '../test/fixtures'
+import { AdminCreateUserPage } from './AdminCreateUserPage'
 import { AdminUsersPage } from './AdminUsersPage'
 
 vi.mock('../api/instrumentsApi', () => ({
@@ -38,8 +40,19 @@ describe('AdminUsersPage', () => {
     vi.mocked(resetAdminUserPassword).mockResolvedValue(adminUsers[1])
   })
 
+  function renderUsersPage(initialEntry = '/admin/users') {
+    render(
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/users/new" element={<AdminCreateUserPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
   it('loads users and instruments without showing instrument management controls', async () => {
-    render(<AdminUsersPage />)
+    renderUsersPage()
 
     expect(await screen.findByText('Admin')).toBeInTheDocument()
     expect(screen.getByText('Teacher')).toBeInTheDocument()
@@ -48,12 +61,16 @@ describe('AdminUsersPage', () => {
     expect(getAdminInstruments).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('ניהול כלי נגינה')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'הוסף כלי' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'משתמש חדש' })).toBeInTheDocument()
   })
 
-  it('creates a teacher with selected instruments', async () => {
-    render(<AdminUsersPage />)
+  it('creates a teacher with selected instruments on a separate page', async () => {
+    renderUsersPage()
 
     await screen.findByText('Admin')
+    await userEvent.click(screen.getByRole('link', { name: 'משתמש חדש' }))
+
+    expect(await screen.findByRole('heading', { name: 'יצירת משתמש' })).toBeInTheDocument()
     const createForm = screen.getByRole('button', { name: 'יצירת משתמש' }).closest('form')
     expect(createForm).not.toBeNull()
 
@@ -72,14 +89,16 @@ describe('AdminUsersPage', () => {
       isActive: true,
       instrumentIds: [1, 2],
     })
-    await expect(screen.findByText('המשתמש נוצר.')).resolves.toBeInTheDocument()
+    expect(await screen.findByText('המשתמש נוצר.')).toBeInTheDocument()
   })
 
-  it('creates an admin without instrument assignments', async () => {
-    render(<AdminUsersPage />)
+  it('creates an admin without instrument assignments on a separate page', async () => {
+    renderUsersPage()
 
     await screen.findByText('Admin')
-    const createForm = screen.getByRole('button', { name: 'יצירת משתמש' }).closest('form')
+    await userEvent.click(screen.getByRole('link', { name: 'משתמש חדש' }))
+
+    const createForm = (await screen.findByRole('button', { name: 'יצירת משתמש' })).closest('form')
     expect(createForm).not.toBeNull()
 
     await userEvent.type(within(createForm!).getByLabelText('שם מלא'), 'Second Admin')
@@ -101,7 +120,7 @@ describe('AdminUsersPage', () => {
   })
 
   it('edits user details and keeps teacher instrument assignments updated', async () => {
-    render(<AdminUsersPage />)
+    renderUsersPage()
 
     await screen.findByText('Teacher')
     const teacherRow = screen.getByText('teacher@test.local').closest('tr')
@@ -130,7 +149,7 @@ describe('AdminUsersPage', () => {
   })
 
   it('resets a user password', async () => {
-    render(<AdminUsersPage />)
+    renderUsersPage()
 
     await screen.findByText('Teacher')
     const teacherRow = screen.getByText('teacher@test.local').closest('tr')
@@ -143,15 +162,17 @@ describe('AdminUsersPage', () => {
     await expect(screen.findByText('הסיסמה אופסה.')).resolves.toBeInTheDocument()
   })
 
-  it('displays API error messages', async () => {
+  it('displays API error messages on the create page', async () => {
     vi.mocked(createAdminUser).mockRejectedValue({
       isAxiosError: true,
       response: { data: { message: 'Email is already in use.' } },
     })
-    render(<AdminUsersPage />)
+    renderUsersPage()
 
     await screen.findByText('Admin')
-    const createForm = screen.getByRole('button', { name: 'יצירת משתמש' }).closest('form')
+    await userEvent.click(screen.getByRole('link', { name: 'משתמש חדש' }))
+
+    const createForm = (await screen.findByRole('button', { name: 'יצירת משתמש' })).closest('form')
     expect(createForm).not.toBeNull()
 
     await userEvent.type(within(createForm!).getByLabelText('שם מלא'), 'Duplicate')
@@ -163,7 +184,7 @@ describe('AdminUsersPage', () => {
   })
 
   it('does not show instrument assignment controls when editing an admin user', async () => {
-    render(<AdminUsersPage />)
+    renderUsersPage()
 
     await screen.findByText('Admin')
     const adminRow = screen.getByText('admin@test.local').closest('tr')

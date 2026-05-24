@@ -13,4 +13,5 @@ public class User
     public ICollection<UserInstrument> UserInstruments { get; set; } = new List<UserInstrument>();
     public ICollection<Material> UploadedMaterials { get; set; } = new List<Material>();
     public ICollection<MaterialLike> MaterialLikes { get; set; } = new List<MaterialLike>();
+    public ICollection<MaterialDownload> MaterialDownloads { get; set; } = new List<MaterialDownload>();
 }

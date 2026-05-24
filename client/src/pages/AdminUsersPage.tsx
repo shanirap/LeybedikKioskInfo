@@ -1,13 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
 import {
-  createAdminUser,
   getAdminInstruments,
   getAdminUsers,
   resetAdminUserPassword,
   updateAdminUser,
   updateAdminUserInstruments,
 } from '../api/instrumentsApi'
+import { InstrumentCheckboxes } from '../components/InstrumentCheckboxes'
+import { toggleInstrumentIds } from '../utils/instrumentForm'
 import type { AdminUserDto, InstrumentDto } from '../types/material'
 import { formatRole } from '../utils/displayText'
 
@@ -22,7 +24,7 @@ interface UserFormState {
   instrumentIds: number[]
 }
 
-const emptyForm: UserFormState = {
+const emptyEditForm: UserFormState = {
   fullName: '',
   email: '',
   password: '',
@@ -32,27 +34,44 @@ const emptyForm: UserFormState = {
 }
 
 export function AdminUsersPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [users, setUsers] = useState<AdminUserDto[]>([])
   const [instruments, setInstruments] = useState<InstrumentDto[]>([])
-  const [newUser, setNewUser] = useState<UserFormState>(emptyForm)
   const [editingUserId, setEditingUserId] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<UserFormState>(emptyForm)
+  const [editForm, setEditForm] = useState<UserFormState>(emptyEditForm)
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null)
   const [resetPassword, setResetPassword] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<'All' | Role>('All')
+  const [minLikesInput, setMinLikesInput] = useState('')
+  const [minDownloadsInput, setMinDownloadsInput] = useState('')
+  const [minLikes, setMinLikes] = useState<number | undefined>()
+  const [minDownloads, setMinDownloads] = useState<number | undefined>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(
+    () => (location.state as { message?: string } | null)?.message ?? null,
+  )
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if ((location.state as { message?: string } | null)?.message) {
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const [usersData, instrumentsData] = await Promise.all([
-        getAdminUsers(),
+        getAdminUsers({
+          search: search || undefined,
+          role: roleFilter === 'All' ? undefined : roleFilter,
+          minLikes,
+          minDownloads,
+        }),
         getAdminInstruments(),
       ])
       setUsers(usersData)
@@ -62,27 +81,18 @@ export function AdminUsersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [search, roleFilter, minLikes, minDownloads])
 
-  async function handleCreate(e: FormEvent) {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch when filters change
+    void loadData()
+  }, [loadData])
+
+  function handleFilterSearch(e: FormEvent) {
     e.preventDefault()
-    setError(null)
-    setMessage(null)
-    try {
-      await createAdminUser({
-        fullName: newUser.fullName,
-        email: newUser.email,
-        password: newUser.password,
-        role: newUser.role,
-        isActive: newUser.isActive,
-        instrumentIds: newUser.role === 'Teacher' ? newUser.instrumentIds : [],
-      })
-      setNewUser(emptyForm)
-      setMessage('המשתמש נוצר.')
-      await loadData()
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן ליצור משתמש. ודא שכתובת המייל ייחודית.'))
-    }
+    setSearch(searchInput)
+    setMinLikes(minLikesInput ? Number(minLikesInput) : undefined)
+    setMinDownloads(minDownloadsInput ? Number(minDownloadsInput) : undefined)
   }
 
   function startEdit(user: AdminUserDto) {
@@ -133,89 +143,66 @@ export function AdminUsersPage() {
     }
   }
 
-  function toggleInstrument(
-    form: UserFormState,
-    setForm: (value: UserFormState) => void,
-    instrumentId: number,
-  ) {
-    const hasInstrument = form.instrumentIds.includes(instrumentId)
-    setForm({
-      ...form,
-      instrumentIds: hasInstrument
-        ? form.instrumentIds.filter((id) => id !== instrumentId)
-        : [...form.instrumentIds, instrumentId],
-    })
+  function toggleInstrument(instrumentId: number) {
+    setEditForm((current) => ({
+      ...current,
+      instrumentIds: toggleInstrumentIds(current.instrumentIds, instrumentId),
+    }))
   }
 
   return (
     <section>
-      <h1>משתמשים</h1>
-      <p className="page-description">יצירת משתמשים וניהול שיוך כלי נגינה למורים.</p>
+      <div className="page-hero library-hero">
+        <div>
+          <span className="eyebrow">ניהול משתמשים</span>
+          <h1>משתמשים</h1>
+          <p className="page-description">ניהול משתמשים, שיוך כלי נגינה למורים ומעקב אחר פעילות.</p>
+        </div>
+        <Link to="/admin/users/new" className="secondary-button">
+          משתמש חדש
+        </Link>
+      </div>
 
       {loading && <p>טוען משתמשים...</p>}
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}
 
-      <form className="form-panel admin-user-form" onSubmit={handleCreate}>
-        <h2>יצירת משתמש</h2>
+      <form className="toolbar admin-users-toolbar" onSubmit={handleFilterSearch}>
         <label>
-          שם מלא
+          חיפוש
           <input
-            value={newUser.fullName}
-            onChange={(e) => setNewUser({ ...newUser, fullName: e.target.value })}
-            required
-            maxLength={200}
-          />
-        </label>
-        <label>
-          מייל
-          <input
-            type="email"
-            value={newUser.email}
-            onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-            required
-          />
-        </label>
-        <label>
-          סיסמה ראשונית
-          <input
-            type="password"
-            value={newUser.password}
-            onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-            required
-            minLength={8}
+            placeholder="שם או מייל..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </label>
         <label>
           תפקיד
-          <select
-            value={newUser.role}
-            onChange={(e) =>
-              setNewUser({ ...newUser, role: e.target.value as Role, instrumentIds: [] })
-            }
-          >
-            <option value="Teacher">{formatRole('Teacher')}</option>
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as 'All' | Role)}>
+            <option value="All">הכל</option>
             <option value="Admin">{formatRole('Admin')}</option>
+            <option value="Teacher">{formatRole('Teacher')}</option>
           </select>
         </label>
-        <label className="checkbox-label">
+        <label>
+          מינימום לייקים
           <input
-            type="checkbox"
-            checked={newUser.isActive}
-            onChange={(e) => setNewUser({ ...newUser, isActive: e.target.checked })}
+            type="number"
+            min={0}
+            value={minLikesInput}
+            onChange={(e) => setMinLikesInput(e.target.value)}
           />
-          פעיל
         </label>
-        {newUser.role === 'Teacher' && (
-          <InstrumentCheckboxes
-            instruments={instruments}
-            selectedIds={newUser.instrumentIds}
-            onToggle={(instrumentId) =>
-              toggleInstrument(newUser, setNewUser, instrumentId)
-            }
+        <label>
+          מינימום הורדות
+          <input
+            type="number"
+            min={0}
+            value={minDownloadsInput}
+            onChange={(e) => setMinDownloadsInput(e.target.value)}
           />
-        )}
-        <button type="submit">יצירת משתמש</button>
+        </label>
+        <button type="submit" className="secondary-button">סינון</button>
       </form>
 
       {!loading && !error && (
@@ -228,6 +215,8 @@ export function AdminUsersPage() {
                 <th>תפקיד</th>
                 <th>סטטוס</th>
                 <th>כלים</th>
+                <th>לייקים</th>
+                <th>הורדות</th>
                 <th>פעולות</th>
               </tr>
             </thead>
@@ -286,14 +275,14 @@ export function AdminUsersPage() {
                           <InstrumentCheckboxes
                             instruments={instruments}
                             selectedIds={editForm.instrumentIds}
-                            onToggle={(instrumentId) =>
-                              toggleInstrument(editForm, setEditForm, instrumentId)
-                            }
+                            onToggle={toggleInstrument}
                           />
                         ) : (
                           'הכל לפי תפקיד'
                         )}
                       </td>
+                      <td>{user.totalLikesReceived}</td>
+                      <td>{user.totalUniqueDownloadsReceived}</td>
                       <td>
                         <div className="button-row">
                           <button onClick={() => handleSave(user.id)}>שמירה</button>
@@ -319,6 +308,8 @@ export function AdminUsersPage() {
                             ? 'הכל לפי תפקיד'
                             : 'לא שויך'}
                       </td>
+                      <td>{user.totalLikesReceived}</td>
+                      <td>{user.totalUniqueDownloadsReceived}</td>
                       <td>
                         <div className="button-row">
                           <button onClick={() => startEdit(user)}>עריכה</button>
@@ -368,30 +359,5 @@ export function AdminUsersPage() {
         </div>
       )}
     </section>
-  )
-}
-
-function InstrumentCheckboxes({
-  instruments,
-  selectedIds,
-  onToggle,
-}: {
-  instruments: InstrumentDto[]
-  selectedIds: number[]
-  onToggle: (instrumentId: number) => void
-}) {
-  return (
-    <div className="checkbox-grid">
-      {instruments.map((instrument) => (
-        <label className="checkbox-label" key={instrument.id}>
-          <input
-            type="checkbox"
-            checked={selectedIds.includes(instrument.id)}
-            onChange={() => onToggle(instrument.id)}
-          />
-          {instrument.name}
-        </label>
-      ))}
-    </div>
   )
 }

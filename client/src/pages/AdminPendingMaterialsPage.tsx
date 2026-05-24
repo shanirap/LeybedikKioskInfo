@@ -1,14 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
-import { getAdminInstruments } from '../api/instrumentsApi'
 import {
   approveMaterial,
   deleteAdminMaterial,
   downloadMaterialForReview,
   getAdminMaterials,
   rejectMaterial,
-  updateAdminMaterial,
 } from '../api/materialsApi'
 import { ActionMenu } from '../components/ActionMenu'
 import { Button } from '../components/Button'
@@ -16,7 +14,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { IconButton } from '../components/IconButton'
 import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import { Pager } from '../components/Pager'
-import type { InstrumentDto, MaterialDto } from '../types/material'
+import type { MaterialDto } from '../types/material'
 import { formatDateTime, formatMaterialLevel, formatStatus } from '../utils/displayText'
 
 type StatusFilter = 'All' | MaterialDto['status']
@@ -34,11 +32,14 @@ function buildAdminMenuItems(
 ) {
   const items = []
 
-  if (material.status !== 'Approved') {
+  if (material.status !== 'Rejected') {
     items.push({
       label: 'עריכה',
       onClick: () => handlers.startEdit(material),
     })
+  }
+
+  if (material.status !== 'Approved') {
     items.push({
       label: 'אישור',
       onClick: () => handlers.handleApprove(material.id),
@@ -71,23 +72,21 @@ export function AdminPendingMaterialsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('Pending')
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
-  const [instruments, setInstruments] = useState<InstrumentDto[]>([])
-  const [editingMaterial, setEditingMaterial] = useState<MaterialDto | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editInstrumentId, setEditInstrumentId] = useState('')
-  const [editLevel, setEditLevel] = useState<MaterialDto['level']>('Beginner')
-  const [editFile, setEditFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(
+    () => (location.state as { message?: string } | null)?.message ?? null,
+  )
   const [error, setError] = useState<string | null>(null)
   const [materialToArchive, setMaterialToArchive] = useState<MaterialDto | null>(null)
 
   useEffect(() => {
+    if ((location.state as { message?: string } | null)?.message) {
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
     loadMaterials()
-    getAdminInstruments()
-      .then(setInstruments)
-      .catch(() => setInstruments([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, page, search])
 
@@ -122,42 +121,7 @@ export function AdminPendingMaterialsPage() {
   }
 
   function startEdit(material: MaterialDto) {
-    setEditingMaterial(material)
-    setEditTitle(material.title)
-    setEditDescription(material.description ?? '')
-    setEditInstrumentId(String(material.instrumentId))
-    setEditLevel(material.level)
-    setEditFile(null)
-    setMessage(null)
-    setError(null)
-  }
-
-  async function handleSaveEdit(e: FormEvent) {
-    e.preventDefault()
-    if (!editingMaterial) return
-    if (!editTitle.trim()) {
-      setError('יש להזין כותרת לחומר.')
-      return
-    }
-
-    setError(null)
-    setMessage(null)
-    try {
-      const formData = new FormData()
-      formData.append('title', editTitle.trim())
-      formData.append('description', editDescription.trim())
-      formData.append('instrumentId', editInstrumentId)
-      formData.append('level', editLevel)
-      if (editFile) formData.append('file', editFile)
-
-      await updateAdminMaterial(editingMaterial.id, formData)
-      setEditingMaterial(null)
-      setEditFile(null)
-      setMessage('החומר עודכן.')
-      await loadMaterials()
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לעדכן את החומר.'))
-    }
+    navigate(`/admin/materials/${material.id}/edit`)
   }
 
   async function handleApprove(id: number) {
@@ -271,52 +235,6 @@ export function AdminPendingMaterialsPage() {
       {loading && <p className="empty-state">טוען חומרים...</p>}
       {message && <p className="success-text">{message}</p>}
       {error && <p className="error-text">{error}</p>}
-      {editingMaterial && (
-        <form className="form-panel upload-form" onSubmit={handleSaveEdit}>
-          <h2>עריכת חומר לפני אישור</h2>
-          <p className="muted">קובץ נוכחי: {editingMaterial.fileName}</p>
-          <label>
-            <span>כותרת</span>
-            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={250} required />
-          </label>
-          <label>
-            <span>תיאור</span>
-            <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
-          </label>
-          <label>
-            <span>כלי נגינה</span>
-            <select value={editInstrumentId} onChange={(e) => setEditInstrumentId(e.target.value)} required>
-              {instruments.map((instrument) => (
-                <option value={instrument.id} key={instrument.id}>
-                  {instrument.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>רמת החומר</span>
-            <select value={editLevel} onChange={(e) => setEditLevel(e.target.value as MaterialDto['level'])}>
-              <option value="Beginner">מתחילים</option>
-              <option value="Advanced">מתקדמים</option>
-            </select>
-          </label>
-          <label className="file-dropzone">
-            <span className="file-dropzone-title">החלפת קובץ (אופציונלי)</span>
-            <input type="file" onChange={(e) => setEditFile(e.target.files?.[0] ?? null)} />
-            <span className="file-picker-button">בחירת קובץ</span>
-            <strong>{editFile ? editFile.name : 'יישאר הקובץ הקיים'}</strong>
-          </label>
-          <div className="button-row">
-            <button type="button" className="secondary-button" onClick={() => void handleDownload(editingMaterial)}>
-              הורדת הקובץ הנוכחי
-            </button>
-            <button type="submit">שמירה</button>
-            <button type="button" className="secondary-button" onClick={() => setEditingMaterial(null)}>
-              ביטול
-            </button>
-          </div>
-        </form>
-      )}
       {!loading && !error && totalCount === 0 && (
         <p className="empty-state">
           {search ? 'לא נמצאו חומרים התואמים את החיפוש.' : 'אין כרגע חומרים בסטטוס שנבחר.'}

@@ -40,6 +40,8 @@ export interface AdminUserDto {
   role: 'Admin' | 'Teacher'
   isActive: boolean
   instruments: InstrumentDto[]
+  totalLikesReceived: number
+  totalUniqueDownloadsReceived: number
 }
 
 export interface CreateUserRequest {
@@ -81,4 +83,20 @@ export interface AuditLogDto {
   entityId: number | null
   details: string | null
   createdAtUtc: string
+}
+
+export interface TeacherWalletMaterialDto {
+  materialId: number
+  title: string
+  instrumentName: string
+  status: MaterialDto['status']
+  likesCount: number
+  uniqueDownloadsCount: number
+}
+
+export interface TeacherWalletDto {
+  totalLikes: number
+  totalUniqueDownloads: number
+  totalMaterials: number
+  materials: TeacherWalletMaterialDto[]
 }

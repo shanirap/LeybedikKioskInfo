@@ -33,6 +33,13 @@ public class MaterialsController : ControllerBase
         return Ok(await _materialService.GetMyUploadsPagedAsync(User, search, page, pageSize));
     }
 
+    [HttpGet("my-wallet")]
+    [Authorize(Roles = "Teacher,Admin")]
+    public async Task<ActionResult<TeacherWalletDto>> GetMyWallet()
+    {
+        return Ok(await _materialService.GetTeacherWalletAsync(User));
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<MaterialDto>> GetPreviewDetails(int id)
     {

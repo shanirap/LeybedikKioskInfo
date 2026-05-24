@@ -36,6 +36,14 @@ const auditActionLabels: Record<string, string> = {
   ChangePassword: 'שינוי סיסמה',
   CreateInstrument: 'יצירת כלי',
   UpdateInstrument: 'עדכון כלי',
+  ActivateInstrument: 'הפעלת כלי',
+  DeactivateInstrument: 'השבתת כלי',
+  ReactivateUser: 'הפעלת משתמש',
+  DeactivateUser: 'השבתת משתמש',
+  LikeMaterial: 'הוספת לייק',
+  UnlikeMaterial: 'הסרת לייק',
+  DownloadMaterial: 'הורדת חומר',
+  Login: 'התחברות למערכת',
 }
 
 const entityTypeLabels: Record<string, string> = {
@@ -43,6 +51,28 @@ const entityTypeLabels: Record<string, string> = {
   User: 'משתמש',
   Instrument: 'כלי נגינה',
 }
+
+const auditDetailPatterns: Array<[RegExp, string]> = [
+  [/^Approved material (.+)\.$/, 'אושר החומר: $1.'],
+  [/^Rejected material (.+)\.$/, 'נדחה החומר: $1.'],
+  [/^Uploaded material (.+)\.$/, 'הועלה החומר: $1.'],
+  [/^Updated material (.+) before approval\.$/, 'עודכן חומר לפני אישור: $1.'],
+  [/^Updated own material (.+)\.$/, 'עודכן החומר שלי: $1.'],
+  [/^Archived material (.+)\.$/, 'הועבר לארכיון החומר: $1.'],
+  [/^Archived own material (.+)\.$/, 'הועבר לארכיון החומר שלי: $1.'],
+  [/^Restored material (.+)\.$/, 'שוחזר החומר: $1.'],
+  [/^Created (Admin|Teacher) user (.+)\.$/, 'נוצר משתמש $1: $2.'],
+  [/^Updated user (.+)\.$/, 'עודכן משתמש: $1.'],
+  [/^Reactivated user (.+)\.$/, 'הופעל מחדש המשתמש: $1.'],
+  [/^Deactivated user (.+)\.$/, 'הושבת המשתמש: $1.'],
+  [/^Updated teacher instruments to: (.+)\.$/, 'עודכנו כלי הנגינה של המורה: $1.'],
+  [/^Changed password for user (.+)\.$/, 'שונתה סיסמה למשתמש: $1.'],
+  [/^Reset password for user (.+)\.$/, 'אופסה סיסמה למשתמש: $1.'],
+  [/^Created instrument (.+)\.$/, 'נוצר כלי נגינה: $1.'],
+  [/^Updated instrument (.+)\.$/, 'עודכן כלי נגינה: $1.'],
+  [/^Activated instrument (.+)\.$/, 'הופעל כלי נגינה: $1.'],
+  [/^Deactivated instrument (.+)\.$/, 'הושבת כלי נגינה: $1.'],
+]
 
 export function formatRole(role: AuthUser['role']) {
   return roleLabels[role] ?? role
@@ -58,6 +88,18 @@ export function formatMaterialLevel(level: MaterialDto['level']) {
 
 export function formatAuditAction(action: string) {
   return auditActionLabels[action] ?? action
+}
+
+export function formatAuditDetails(details: string | null) {
+  if (!details)
+    return ''
+
+  for (const [pattern, replacement] of auditDetailPatterns) {
+    if (pattern.test(details))
+      return details.replace(pattern, replacement)
+  }
+
+  return details
 }
 
 export function formatEntityType(entityType: string) {

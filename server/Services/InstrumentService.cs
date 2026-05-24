@@ -67,7 +67,7 @@ public class InstrumentService
             "CreateInstrument",
             "Instrument",
             instrument.Id,
-            $"Created instrument {instrument.Name}.");
+            $"נוצר כלי נגינה: {instrument.Name}.");
 
         return ToDto(instrument);
     }
@@ -98,7 +98,7 @@ public class InstrumentService
             "UpdateInstrument",
             "Instrument",
             instrument.Id,
-            $"Updated instrument {instrument.Name}.");
+            $"עודכן כלי נגינה: {instrument.Name}.");
 
         if (wasActive != instrument.IsActive)
         {
@@ -107,7 +107,9 @@ public class InstrumentService
                 instrument.IsActive ? "ActivateInstrument" : "DeactivateInstrument",
                 "Instrument",
                 instrument.Id,
-                $"{(instrument.IsActive ? "Activated" : "Deactivated")} instrument {instrument.Name}.");
+                instrument.IsActive
+                    ? $"הופעל כלי נגינה: {instrument.Name}."
+                    : $"הושבת כלי נגינה: {instrument.Name}.");
         }
 
         return InstrumentUpdateResult.Success(ToDto(instrument));

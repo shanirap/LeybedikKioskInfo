@@ -79,6 +79,8 @@ export const adminUsers: AdminUserDto[] = [
     role: 'Admin',
     isActive: true,
     instruments: [],
+    totalLikesReceived: 0,
+    totalUniqueDownloadsReceived: 0,
   },
   {
     id: 2,
@@ -87,6 +89,8 @@ export const adminUsers: AdminUserDto[] = [
     role: 'Teacher',
     isActive: true,
     instruments: [instruments[0]],
+    totalLikesReceived: 4,
+    totalUniqueDownloadsReceived: 2,
   },
 ]
 

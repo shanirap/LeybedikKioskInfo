@@ -2,17 +2,19 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { within } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { getAdminInstruments } from '../api/instrumentsApi'
 import {
   approveMaterial,
   deleteAdminMaterial,
   downloadMaterialForReview,
   getAdminMaterials,
+  getMaterialPreviewDetails,
   rejectMaterial,
   updateAdminMaterial,
 } from '../api/materialsApi'
 import { instruments, materials, pagedMaterials } from '../test/fixtures'
+import { AdminEditMaterialPage } from './AdminEditMaterialPage'
 import { AdminPendingMaterialsPage } from './AdminPendingMaterialsPage'
 
 vi.mock('../api/instrumentsApi', () => ({
@@ -24,6 +26,7 @@ vi.mock('../api/materialsApi', () => ({
   deleteAdminMaterial: vi.fn(),
   downloadMaterialForReview: vi.fn(),
   getAdminMaterials: vi.fn(),
+  getMaterialPreviewDetails: vi.fn(),
   rejectMaterial: vi.fn(),
   updateAdminMaterial: vi.fn(),
 }))
@@ -39,10 +42,12 @@ describe('AdminPendingMaterialsPage', () => {
     vi.mocked(deleteAdminMaterial).mockReset()
     vi.mocked(downloadMaterialForReview).mockReset()
     vi.mocked(getAdminMaterials).mockReset()
+    vi.mocked(getMaterialPreviewDetails).mockReset()
     vi.mocked(rejectMaterial).mockReset()
     vi.mocked(updateAdminMaterial).mockReset()
     vi.mocked(getAdminInstruments).mockResolvedValue(instruments)
     vi.mocked(getAdminMaterials).mockResolvedValue(pagedMaterials())
+    vi.mocked(getMaterialPreviewDetails).mockResolvedValue(materials[1])
     vi.mocked(approveMaterial).mockResolvedValue({ ...materials[1], status: 'Approved' })
     vi.mocked(rejectMaterial).mockResolvedValue({ ...materials[1], status: 'Rejected' })
     vi.mocked(updateAdminMaterial).mockResolvedValue({ ...materials[1], title: 'Updated By Admin' })
@@ -50,10 +55,14 @@ describe('AdminPendingMaterialsPage', () => {
     vi.mocked(downloadMaterialForReview).mockResolvedValue()
   })
 
-  function renderPage() {
+  function renderPage(initialEntry = '/admin/pending-materials') {
     render(
-      <MemoryRouter>
-        <AdminPendingMaterialsPage />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/admin/pending-materials" element={<AdminPendingMaterialsPage />} />
+          <Route path="/admin/materials/:id/edit" element={<AdminEditMaterialPage />} />
+          <Route path="/materials/:id/preview" element={<div>Preview page</div>} />
+        </Routes>
       </MemoryRouter>,
     )
   }
@@ -80,14 +89,13 @@ describe('AdminPendingMaterialsPage', () => {
     )
   })
 
-  it('runs approval, rejection, preview, and review download actions', async () => {
+  it('runs approval, rejection, and review download actions', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue('Needs work')
     renderPage()
 
     await screen.findByText('String Warmup')
     const stringCard = screen.getByText('String Warmup').closest('article')
     expect(stringCard).not.toBeNull()
-    await userEvent.click(within(stringCard!).getByRole('button', { name: 'צפייה' }))
     await userEvent.click(within(stringCard!).getByRole('button', { name: 'הורדה לבדיקה' }))
 
     await openCardMenu(stringCard!)
@@ -102,7 +110,7 @@ describe('AdminPendingMaterialsPage', () => {
     await waitFor(() => expect(getAdminMaterials).toHaveBeenCalledTimes(3))
   })
 
-  it('edits a pending material before approval', async () => {
+  it('opens edit on a separate page and saves changes', async () => {
     renderPage()
 
     await screen.findByText('String Warmup')
@@ -112,12 +120,15 @@ describe('AdminPendingMaterialsPage', () => {
     await openCardMenu(stringCard!)
     await userEvent.click(screen.getByRole('menuitem', { name: 'עריכה' }))
 
+    expect(await screen.findByRole('heading', { name: 'עריכת חומר לפני אישור' })).toBeInTheDocument()
+    expect(getMaterialPreviewDetails).toHaveBeenCalledWith(2)
+
     await userEvent.clear(screen.getByLabelText('כותרת'))
     await userEvent.type(screen.getByLabelText('כותרת'), 'Updated By Admin')
     await userEvent.click(screen.getByRole('button', { name: 'שמירה' }))
 
     expect(updateAdminMaterial).toHaveBeenCalledWith(2, expect.any(FormData))
-    await waitFor(() => expect(screen.getByText('החומר עודכן.')).toBeInTheDocument())
+    expect(await screen.findByText('החומר עודכן בהצלחה.')).toBeInTheDocument()
   })
 
   it('archives a material after confirmation', async () => {

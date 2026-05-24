@@ -231,7 +231,7 @@ public class MaterialService
             "UploadMaterial",
             "Material",
             material.Id,
-            $"Uploaded material {material.Title}.");
+            $"הועלה החומר: {material.Title}.");
 
         var created = await _db.Materials
             .AsNoTracking()
@@ -263,11 +263,37 @@ public class MaterialService
 
         if (!adminReview)
         {
-            material.DownloadCount += 1;
-            await _db.SaveChangesAsync();
+            await TryRecordUniqueDownloadAsync(material, user.GetUserId());
         }
 
         return new StoredFileResult(stream, fileName, GetContentType(fileName));
+    }
+
+    public async Task<TeacherWalletDto> GetTeacherWalletAsync(ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        var materials = await _db.Materials
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Where(m => !m.IsDeleted && m.UploadedByUserId == userId)
+            .OrderByDescending(m => m.CreatedAtUtc)
+            .ToListAsync();
+
+        var items = materials
+            .Select(m => new TeacherWalletMaterialDto(
+                m.Id,
+                m.Title,
+                m.Instrument.Name,
+                m.Status.ToString(),
+                m.LikeCount,
+                m.DownloadCount))
+            .ToList();
+
+        return new TeacherWalletDto(
+            items.Sum(item => item.LikesCount),
+            items.Sum(item => item.UniqueDownloadsCount),
+            items.Count,
+            items);
     }
 
     public async Task<StoredFileResult?> GetPreviewAsync(int id, ClaimsPrincipal user)
@@ -344,7 +370,7 @@ public class MaterialService
             "ApproveMaterial",
             "Material",
             material.Id,
-            $"Approved material {material.Title}.");
+            $"אושר החומר: {material.Title}.");
 
         return ToDto(material, false);
     }
@@ -374,7 +400,7 @@ public class MaterialService
             "RejectMaterial",
             "Material",
             material.Id,
-            $"Rejected material {material.Title}.");
+            $"נדחה החומר: {material.Title}.");
 
         return ToDto(material, false);
     }
@@ -394,7 +420,7 @@ public class MaterialService
             "DeleteMaterialByAdmin",
             "Material",
             material.Id,
-            $"Archived material {material.Title}.");
+            $"הועבר לארכיון החומר: {material.Title}.");
 
         return MaterialDeleteResult.Success();
     }
@@ -421,7 +447,7 @@ public class MaterialService
             "DeleteOwnMaterial",
             "Material",
             material.Id,
-            $"Archived own material {material.Title}.");
+            $"הועבר לארכיון החומר שלי: {material.Title}.");
 
         return MaterialDeleteResult.Success();
     }
@@ -447,7 +473,7 @@ public class MaterialService
             "RestoreMaterial",
             "Material",
             material.Id,
-            $"Restored material {material.Title}.");
+            $"שוחזר החומר: {material.Title}.");
 
         return ToDto(material, false);
     }
@@ -507,7 +533,7 @@ public class MaterialService
             "UpdateOwnMaterial",
             "Material",
             material.Id,
-            $"Updated own material {material.Title}.");
+            $"עודכן החומר שלי: {material.Title}.");
 
         var updated = await _db.Materials
             .AsNoTracking()
@@ -529,8 +555,7 @@ public class MaterialService
         if (material is null)
             return MaterialUpdateResult.NotFound();
 
-        if (material.Status == MaterialStatus.Approved)
-            return MaterialUpdateResult.Invalid("Approved materials cannot be edited.");
+        var wasApproved = material.Status == MaterialStatus.Approved;
 
         if (string.IsNullOrWhiteSpace(request.Title))
             return MaterialUpdateResult.Invalid("Material title is required.");
@@ -553,20 +578,30 @@ public class MaterialService
             material.OriginalFileName = originalFileName;
             material.FileSizeBytes = fileSizeBytes;
             material.FileHashSha256 = fileHash;
+
+            if (wasApproved)
+            {
+                material.ApprovedFilePath = storedFile.Path;
+                material.ApprovedFileName = originalFileName;
+            }
         }
 
         material.Title = request.Title.Trim();
         material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         material.InstrumentId = request.InstrumentId;
         material.Level = request.Level;
-        material.Status = MaterialStatus.Pending;
-        material.ApprovedAtUtc = null;
-        material.ApprovedByUserId = null;
-        material.ApprovedFilePath = null;
-        material.ApprovedFileName = null;
-        material.RejectedAtUtc = null;
-        material.RejectedByUserId = null;
-        material.RejectionReason = null;
+
+        if (!wasApproved)
+        {
+            material.Status = MaterialStatus.Pending;
+            material.ApprovedAtUtc = null;
+            material.ApprovedByUserId = null;
+            material.ApprovedFilePath = null;
+            material.ApprovedFileName = null;
+            material.RejectedAtUtc = null;
+            material.RejectedByUserId = null;
+            material.RejectionReason = null;
+        }
 
         await _db.SaveChangesAsync();
         await _auditLogService.AddAsync(
@@ -574,7 +609,9 @@ public class MaterialService
             "UpdateMaterialByAdmin",
             "Material",
             material.Id,
-            $"Updated material {material.Title} before approval.");
+            wasApproved
+                ? $"עודכן חומר מאושר: {material.Title}."
+                : $"עודכן חומר לפני אישור: {material.Title}.");
 
         var updated = await _db.Materials
             .AsNoTracking()
@@ -627,6 +664,30 @@ public class MaterialService
             ui.UserId == userId &&
             ui.InstrumentId == instrumentId &&
             ui.Instrument.IsActive);
+    }
+
+    private async Task TryRecordUniqueDownloadAsync(Material material, int userId)
+    {
+        try
+        {
+            var alreadyRecorded = await _db.MaterialDownloads
+                .AnyAsync(d => d.MaterialId == material.Id && d.UserId == userId);
+            if (alreadyRecorded)
+                return;
+
+            _db.MaterialDownloads.Add(new MaterialDownload
+            {
+                MaterialId = material.Id,
+                UserId = userId,
+                DownloadedAtUtc = DateTime.UtcNow,
+            });
+            material.DownloadCount += 1;
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // A concurrent request may have already recorded this download.
+        }
     }
 
     private static async Task<string?> ValidateUploadAsync(IFormFile file)

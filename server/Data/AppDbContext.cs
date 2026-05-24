@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<Material> Materials => Set<Material>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<MaterialLike> MaterialLikes => Set<MaterialLike>();
+    public DbSet<MaterialDownload> MaterialDownloads => Set<MaterialDownload>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -127,6 +128,21 @@ public class AppDbContext : DbContext
 
             entity.HasOne(e => e.User)
                 .WithMany(u => u.MaterialLikes)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MaterialDownload>(entity =>
+        {
+            entity.HasIndex(e => new { e.MaterialId, e.UserId }).IsUnique();
+
+            entity.HasOne(e => e.Material)
+                .WithMany(m => m.MaterialDownloads)
+                .HasForeignKey(e => e.MaterialId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany(u => u.MaterialDownloads)
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
