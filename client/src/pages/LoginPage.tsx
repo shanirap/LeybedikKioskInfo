@@ -4,6 +4,7 @@ import { getApiErrorMessage } from '../api/apiClient'
 import { login as loginApi } from '../api/authApi'
 import { useAuth } from '../utils/useAuth'
 import { APP_TITLE, INSTITUTION_LOGO_SRC } from '../utils/displayText'
+import loginWatermarkSrc from '../assets/login/piano-watermark.png'
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -35,6 +36,9 @@ export function LoginPage() {
 
   return (
     <div className="login-wrapper">
+      <div className="login-watermark" aria-hidden="true">
+        <img src={loginWatermarkSrc} alt="" />
+      </div>
       <form className="login-form" onSubmit={handleSubmit}>
         <div className="login-brand">
           <img src={INSTITUTION_LOGO_SRC} alt="לוגו לייבעדיק" />

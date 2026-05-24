@@ -50,4 +50,51 @@ describe('MaterialPreviewPage', () => {
 
     expect(await screen.findByText('סיבת דחייה: Needs clearer notation')).toBeInTheDocument()
   })
+
+  it('shows an error for invalid material ids', async () => {
+    render(
+      <MemoryRouter initialEntries={['/materials/abc/preview']}>
+        <Routes>
+          <Route path="/materials/:id/preview" element={<MaterialPreviewPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('מזהה החומר אינו תקין.')).toBeInTheDocument()
+    expect(getMaterialPreviewDetails).not.toHaveBeenCalled()
+  })
+
+  it('shows unsupported preview message for non-previewable files', async () => {
+    vi.mocked(getMaterialPreviewDetails).mockResolvedValue({
+      ...materials[0],
+      fileName: 'notes.docx',
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/materials/1/preview']}>
+        <Routes>
+          <Route path="/materials/:id/preview" element={<MaterialPreviewPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(
+      await screen.findByText('סוג הקובץ הזה לא מוצג ישירות בדפדפן. אפשר להוריד אותו ולפתוח במחשב.'),
+    ).toBeInTheDocument()
+    expect(getMaterialPreviewBlob).not.toHaveBeenCalled()
+  })
+
+  it('uses admin back label when opened from an admin page', async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: '/materials/1/preview', state: { from: '/admin/pending-materials' } }]}
+      >
+        <Routes>
+          <Route path="/materials/:id/preview" element={<MaterialPreviewPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('link', { name: 'חזרה לניהול' })).toBeInTheDocument()
+  })
 })

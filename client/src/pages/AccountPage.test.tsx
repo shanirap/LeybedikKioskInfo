@@ -53,4 +53,23 @@ describe('AccountPage', () => {
     })
     expect(screen.getByLabelText('סיסמה נוכחית')).toHaveValue('')
   })
+
+  it('shows API errors when password change fails', async () => {
+    vi.mocked(changePassword).mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { message: 'Current password is incorrect.' } },
+    })
+    render(
+      <AuthProvider>
+        <AccountPage />
+      </AuthProvider>,
+    )
+
+    await userEvent.type(screen.getByLabelText('סיסמה נוכחית'), 'Wrong123!')
+    await userEvent.type(screen.getByLabelText('סיסמה חדשה'), 'NewPassword123!')
+    await userEvent.type(screen.getByLabelText('אימות סיסמה חדשה'), 'NewPassword123!')
+    await userEvent.click(screen.getByRole('button', { name: 'עדכון סיסמה' }))
+
+    expect(await screen.findByText('הסיסמה הנוכחית אינה נכונה.')).toBeInTheDocument()
+  })
 })

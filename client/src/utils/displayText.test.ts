@@ -3,6 +3,7 @@ import {
   formatAuditAction,
   formatAuditDetails,
   formatDate,
+  formatDateTime,
   formatEntityType,
   formatMaterialLevel,
   formatRole,
@@ -39,5 +40,17 @@ describe('display text helpers', () => {
 
   it('formats dates in the Hebrew locale', () => {
     expect(formatDate('2026-01-02T12:00:00Z')).toMatch(/2026|02|2/)
+    expect(formatDateTime('2026-01-02T12:00:00Z')).toMatch(/2026|02|2/)
+  })
+
+  it('returns empty audit details for null values', () => {
+    expect(formatAuditDetails(null)).toBe('')
+  })
+
+  it('translates additional audit detail patterns', () => {
+    expect(formatAuditDetails('Restored material Rhythm Basics.')).toBe('שוחזר החומר: Rhythm Basics.')
+    expect(formatAuditDetails('Archived own material String Warmup.')).toBe(
+      'הועבר לארכיון החומר שלי: String Warmup.',
+    )
   })
 })

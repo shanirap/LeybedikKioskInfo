@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { within } from '@testing-library/dom'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +54,22 @@ describe('MyUploadsPage', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
   })
 
+  it('searches uploads server-side', async () => {
+    renderPage()
+
+    await screen.findByText('Rhythm Basics')
+    await userEvent.type(screen.getByLabelText('חיפוש'), 'violin')
+    await userEvent.click(screen.getByRole('button', { name: 'חפש' }))
+
+    await waitFor(() =>
+      expect(getMyUploadedMaterials).toHaveBeenCalledWith({
+        search: 'violin',
+        page: 1,
+        pageSize: 20,
+      }),
+    )
+  })
+
   it('previews an uploaded material', async () => {
     renderPage()
 
@@ -99,5 +115,13 @@ describe('MyUploadsPage', () => {
 
     expect(updateMyUploadedMaterial).toHaveBeenCalledWith(2, expect.any(FormData))
     await expect(screen.findByText('החומר עודכן ונשלח מחדש לבדיקה.')).resolves.toBeInTheDocument()
+  })
+
+  it('shows API errors when loading uploads fails', async () => {
+    vi.mocked(getMyUploadedMaterials).mockRejectedValue({ isAxiosError: true })
+
+    renderPage()
+
+    expect(await screen.findByText('לא ניתן לטעון את החומרים שהעלית.')).toBeInTheDocument()
   })
 })

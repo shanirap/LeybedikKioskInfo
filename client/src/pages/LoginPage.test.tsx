@@ -26,6 +26,15 @@ function renderLogin() {
 }
 
 describe('LoginPage', () => {
+  it('shows a decorative piano watermark behind the login form', () => {
+    renderLogin()
+
+    const watermark = document.querySelector('.login-watermark')
+    expect(watermark).toBeInTheDocument()
+    expect(watermark).toHaveAttribute('aria-hidden', 'true')
+    expect(watermark?.querySelector('img')).toHaveAttribute('alt', '')
+  })
+
   it('logs in teachers and navigates to the teacher library', async () => {
     vi.mocked(login).mockResolvedValue(teacherUser)
     renderLogin()
@@ -47,5 +56,19 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'כניסה' }))
 
     await waitFor(() => expect(screen.getByText('Admin pending')).toBeInTheDocument())
+  })
+
+  it('shows a translated error when login fails', async () => {
+    vi.mocked(login).mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { message: 'Invalid email or password.' } },
+    })
+    renderLogin()
+
+    await userEvent.type(screen.getByLabelText('מייל'), 'wrong@test.local')
+    await userEvent.type(screen.getByLabelText('סיסמה'), 'Wrong123!')
+    await userEvent.click(screen.getByRole('button', { name: 'כניסה' }))
+
+    expect(await screen.findByText('כתובת המייל או הסיסמה אינם נכונים.')).toBeInTheDocument()
   })
 })

@@ -5,17 +5,23 @@ import {
   deleteAdminMaterial,
   deleteMyUploadedMaterial,
   downloadMaterial,
+  downloadMaterialForReview,
   getAdminMaterials,
   getArchivedMaterials,
   getApprovedMaterials,
+  getMaterialPreviewBlob,
+  getMaterialPreviewDetails,
+  getMyUploadedMaterials,
+  getTeacherWallet,
   likeMaterial,
+  previewMaterial,
   rejectMaterial,
   restoreMaterial,
   updateAdminMaterial,
   updateMyUploadedMaterial,
   uploadMaterial,
 } from './materialsApi'
-import { materials } from '../test/fixtures'
+import { materials, pagedMaterials } from '../test/fixtures'
 
 vi.mock('./apiClient', () => ({
   apiClient: {
@@ -46,6 +52,29 @@ describe('materials API helpers', () => {
       params: { status: 'Pending' },
     })
     expect(apiClient.get).toHaveBeenNthCalledWith(3, '/admin/materials/archived', { params: undefined })
+  })
+
+  it('loads uploads, preview details, and teacher wallet from the expected endpoints', async () => {
+    const wallet = {
+      totalLikes: 4,
+      totalUniqueDownloads: 2,
+      totalMaterials: 1,
+      materials: [],
+    }
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: pagedMaterials() })
+      .mockResolvedValueOnce({ data: materials[0] })
+      .mockResolvedValueOnce({ data: wallet })
+
+    await expect(getMyUploadedMaterials({ search: 'piano' })).resolves.toEqual(pagedMaterials())
+    await expect(getMaterialPreviewDetails(1)).resolves.toBe(materials[0])
+    await expect(getTeacherWallet()).resolves.toBe(wallet)
+
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, '/materials/my-uploads', {
+      params: { search: 'piano' },
+    })
+    expect(apiClient.get).toHaveBeenNthCalledWith(2, '/materials/1')
+    expect(apiClient.get).toHaveBeenNthCalledWith(3, '/materials/my-wallet')
   })
 
   it('posts material actions to the expected endpoints', async () => {
@@ -114,5 +143,84 @@ describe('materials API helpers', () => {
     })
     expect(click).toHaveBeenCalled()
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test')
+  })
+
+  it('loads preview blobs from the preview endpoint', async () => {
+    const blob = new Blob(['pdf'], { type: 'application/pdf' })
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: blob,
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    })
+
+    await expect(getMaterialPreviewBlob(1)).resolves.toBe(blob)
+
+    expect(apiClient.get).toHaveBeenCalledWith('/materials/1/preview', {
+      responseType: 'blob',
+      validateStatus: expect.any(Function),
+    })
+  })
+
+  it('downloads admin review files through a temporary link', async () => {
+    const blob = new Blob(['pdf'], { type: 'application/pdf' })
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: blob,
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    })
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:review')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    await downloadMaterialForReview(2, 'strings.pdf')
+
+    expect(apiClient.get).toHaveBeenCalledWith('/admin/materials/2/download', {
+      responseType: 'blob',
+      validateStatus: expect.any(Function),
+    })
+    expect(click).toHaveBeenCalled()
+  })
+
+  it('opens preview files in a new window', async () => {
+    const blob = new Blob(['pdf'], { type: 'application/pdf' })
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: blob,
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    })
+    const previewWindow = {
+      opener: {},
+      closed: false,
+      document: {
+        title: '',
+        body: { dir: '', textContent: '' },
+      },
+      location: { href: '' },
+    }
+    vi.spyOn(window, 'open').mockReturnValue(previewWindow as unknown as Window)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
+
+    await previewMaterial(1, 'rhythm.pdf')
+
+    expect(window.open).toHaveBeenCalledWith('', '_blank')
+    expect(previewWindow.location.href).toBe('blob:preview')
+    expect(previewWindow.document.body.textContent).toBe('טוען תצוגה מקדימה...')
+  })
+
+  it('throws when blob requests return an error payload', async () => {
+    const errorBlob = new Blob([JSON.stringify({ message: 'File not found.' })], {
+      type: 'application/json',
+    })
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: errorBlob,
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+      config: {},
+      request: {},
+    })
+
+    await expect(getMaterialPreviewBlob(99)).rejects.toMatchObject({
+      message: 'File not found.',
+    })
   })
 })
