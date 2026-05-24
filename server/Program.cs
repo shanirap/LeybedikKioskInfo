@@ -68,6 +68,7 @@ builder.Services.AddScoped<IFileStorageService>(sp =>
 builder.Services.AddScoped<MaterialService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<DevelopmentDataSeeder>();
+builder.Services.AddScoped<BootstrapAdminService>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -116,6 +117,19 @@ if (app.Environment.IsDevelopment())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
     await scope.ServiceProvider.GetRequiredService<DevelopmentDataSeeder>().SeedAsync();
+}
+else
+{
+    using var scope = app.Services.CreateScope();
+    var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+    if (configuration.GetValue<bool>("Database:AutoMigrate"))
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.MigrateAsync();
+    }
+
+    await scope.ServiceProvider.GetRequiredService<BootstrapAdminService>().TryBootstrapAsync();
 }
 
 app.UseDefaultFiles();

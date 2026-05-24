@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getApiErrorMessage } from '../api/apiClient'
 import { getAuditLogsPaged } from '../api/auditApi'
 import { Pager } from '../components/Pager'
@@ -16,12 +16,7 @@ export function AdminAuditLogsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadLogs()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search])
-
-  async function loadLogs() {
+  const loadLogs = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -33,7 +28,12 @@ export function AdminAuditLogsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, search])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch when page/search changes
+    void loadLogs()
+  }, [loadLogs])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()

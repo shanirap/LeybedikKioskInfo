@@ -37,6 +37,8 @@ public class TestApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:ExpiryMinutes"] = "120",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
                 ["Storage:RootPath"] = _storageRootPath ?? "Storage",
+                ["BootstrapAdmin:Enabled"] = "false",
+                ["Database:AutoMigrate"] = "false",
             });
         });
 

@@ -2,6 +2,7 @@
 server/.hashgen/
 .build-check/
 publish/
+**/publish/
 
 # Local uploaded/generated storage
 server/Storage/*

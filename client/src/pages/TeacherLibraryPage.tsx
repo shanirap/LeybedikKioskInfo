@@ -82,7 +82,8 @@ export function TeacherLibraryPage() {
   }, [])
 
   useEffect(() => {
-    loadMaterials()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch library on mount
+    void loadMaterials()
   }, [loadMaterials])
 
   async function handleLike(material: MaterialDto) {

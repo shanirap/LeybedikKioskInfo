@@ -121,7 +121,9 @@ async function fetchBlob(url: string) {
     throw await createBlobRequestError(response)
   }
 
-  const contentType = response.headers['content-type'] ?? ''
+  const rawContentType = response.headers['content-type']
+  const contentType = typeof rawContentType === 'string' ? rawContentType : String(rawContentType ?? '')
+
   if (contentType.includes('json') || contentType.includes('problem+json')) {
     throw await createBlobRequestError(response)
   }

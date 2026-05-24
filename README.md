@@ -110,6 +110,11 @@ Jwt__Audience=LeybedikInfoKioskClient
 Jwt__ExpiryMinutes=120
 Storage__RootPath=<absolute path outside the app folder>
 Cors__AllowedOrigins__0=<frontend origin if hosted separately>
+Database__AutoMigrate=false
+BootstrapAdmin__Enabled=false
+BootstrapAdmin__Email=<first admin email>
+BootstrapAdmin__FullName=<first admin full name>
+BootstrapAdmin__Password=<strong password at least 8 characters>
 ```
 
 Production startup fails fast when required settings are missing or unsafe:
@@ -122,6 +127,46 @@ Production startup fails fast when required settings are missing or unsafe:
 - With `Storage__Provider=S3`, configure `Storage__S3__Endpoint`, `Storage__S3__Bucket`, `Storage__S3__AccessKey`, and `Storage__S3__SecretKey`.
 - `Cors__AllowedOrigins__0` is only needed when the frontend is hosted on a different origin from the API.
 - For a single-site deployment where ASP.NET Core serves the React app from `wwwroot`, leave CORS empty.
+- `Database__AutoMigrate` defaults to `false`. Apply migrations manually before pilot launch.
+- `BootstrapAdmin__Enabled=true` creates the first admin only when no admin exists. Disable it after first login.
+
+### Production Database Migration
+
+Production does not migrate automatically unless `Database__AutoMigrate=true`.
+
+Apply migrations manually before starting the pilot:
+
+```powershell
+dotnet ef database update --project .\server\server.csproj
+```
+
+Or:
+
+```powershell
+.\scripts\apply-database-migrations.ps1
+```
+
+See [docs/production-database-migration.md](docs/production-database-migration.md).
+
+### First Admin Bootstrap
+
+For the first production deployment, set:
+
+```powershell
+BootstrapAdmin__Enabled=true
+BootstrapAdmin__Email=<admin email>
+BootstrapAdmin__FullName=<admin full name>
+BootstrapAdmin__Password=<password at least 8 characters>
+```
+
+Rules:
+
+- Runs only outside Development.
+- Runs only when enabled.
+- Runs only if zero admin users exist.
+- Never logs the password.
+
+After the first successful login, set `BootstrapAdmin__Enabled=false`.
 
 ### MinIO / S3-Compatible Storage
 
@@ -179,8 +224,10 @@ Back up these production assets:
 You do not need to back up `publish`, `node_modules`, `bin`, `obj`, or `client/dist` because they can be rebuilt.
 
 See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+See [docs/production-database-migration.md](docs/production-database-migration.md).
 See [docs/deployment-smoke-test.md](docs/deployment-smoke-test.md) before opening the system to users.
 
 ## Documentation
 
 See [docs/technical-plan.md](docs/technical-plan.md).
+See [docs/deployment-smoke-test.md](docs/deployment-smoke-test.md) for the pilot go-live checklist.

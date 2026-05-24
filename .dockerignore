@@ -2,6 +2,7 @@
 **/obj
 **/node_modules
 **/dist
+**/dist-ssr
 **/.vite
 **/TestResults
 .git
@@ -9,10 +10,13 @@
 .idea
 .vscode
 publish
-Storage
+**/publish
 server/Storage
+server/Storage/**
+!server/Storage/.gitkeep
 *.user
 *.suo
 .env
 .env.*
+!.env.example
 !.env.production.example
