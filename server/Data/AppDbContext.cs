@@ -57,9 +57,19 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Title).IsRequired().HasMaxLength(250);
             entity.Property(e => e.OriginalFilePath).IsRequired();
             entity.Property(e => e.OriginalFileName).IsRequired();
+            entity.Property(e => e.Level).HasDefaultValue(MaterialLevel.Beginner);
             entity.Property(e => e.Status).HasDefaultValue(MaterialStatus.Pending);
             entity.Property(e => e.DownloadCount).HasDefaultValue(0);
             entity.Property(e => e.LikeCount).HasDefaultValue(0);
+            entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+            entity.Property(e => e.RejectionReason).HasMaxLength(1000);
+            entity.Property(e => e.FileHashSha256).HasMaxLength(64);
+
+            entity.HasIndex(e => new { e.IsDeleted, e.Status, e.ApprovedAtUtc });
+            entity.HasIndex(e => new { e.UploadedByUserId, e.IsDeleted, e.CreatedAtUtc });
+            entity.HasIndex(e => new { e.InstrumentId, e.Status, e.IsDeleted });
+            entity.HasIndex(e => e.CreatedAtUtc);
+            entity.HasIndex(e => e.DeletedAtUtc);
 
             entity.HasOne(e => e.Instrument)
                 .WithMany(i => i.Materials)
@@ -75,6 +85,21 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ApprovedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.DeletedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.DeletedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RestoredByUser)
+                .WithMany()
+                .HasForeignKey(e => e.RestoredByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.RejectedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.RejectedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>

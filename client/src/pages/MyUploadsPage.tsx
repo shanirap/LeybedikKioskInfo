@@ -1,59 +1,127 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
-import { getMyUploadedMaterials, previewMaterial } from '../api/materialsApi'
-import type { MaterialDto } from '../types/material'
-import { formatDateTime, formatStatus } from '../utils/displayText'
+import { getInstruments } from '../api/instrumentsApi'
+import { deleteMyUploadedMaterial, getMyUploadedMaterials, updateMyUploadedMaterial } from '../api/materialsApi'
+import { ActionMenu } from '../components/ActionMenu'
+import { Button } from '../components/Button'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
+import { Pager } from '../components/Pager'
+import type { InstrumentDto, MaterialDto } from '../types/material'
+import { formatDateTime, formatMaterialLevel, formatStatus } from '../utils/displayText'
 
-type StatusFilter = 'All' | MaterialDto['status']
+const PAGE_SIZE = 20
 
 export function MyUploadsPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [materials, setMaterials] = useState<MaterialDto[]>([])
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
+  const [instruments, setInstruments] = useState<InstrumentDto[]>([])
+  const [editingMaterial, setEditingMaterial] = useState<MaterialDto | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editInstrumentId, setEditInstrumentId] = useState('')
+  const [editLevel, setEditLevel] = useState<MaterialDto['level']>('Beginner')
+  const [editFile, setEditFile] = useState<File | null>(null)
   const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const visibleMaterials = useMemo(() => {
-    const query = search.trim().toLowerCase()
-
-    return materials.filter((material) => {
-      const matchesStatus = statusFilter === 'All' || material.status === statusFilter
-      const haystack = [
-        material.title,
-        material.description ?? '',
-        material.instrumentName,
-        material.uploadedByName,
-        material.fileName,
-        formatStatus(material.status),
-      ]
-        .join(' ')
-        .toLowerCase()
-
-      return matchesStatus && (!query || haystack.includes(query))
-    })
-  }, [materials, search, statusFilter])
-
-  const approvedCount = materials.filter((material) => material.status === 'Approved').length
-  const totalLikes = materials.reduce((sum, material) => sum + material.likeCount, 0)
+  const [materialToArchive, setMaterialToArchive] = useState<MaterialDto | null>(null)
 
   useEffect(() => {
-    async function loadMaterials() {
-      setLoading(true)
-      setError(null)
-      try {
-        setMaterials(await getMyUploadedMaterials())
-      } catch (err) {
-        setError(getApiErrorMessage(err, 'לא ניתן לטעון את החומרים שהעלית.'))
-      } finally {
-        setLoading(false)
-      }
+    loadMaterials()
+    getInstruments()
+      .then(setInstruments)
+      .catch(() => setInstruments([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search])
+
+  async function loadMaterials() {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await getMyUploadedMaterials({ search: search || undefined, page, pageSize: PAGE_SIZE })
+      setMaterials(result.items)
+      setTotalCount(result.totalCount)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'לא ניתן לטעון את החומרים שהעלית.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setPage(1)
+    setSearch(searchInput)
+  }
+
+  function handlePreview(material: MaterialDto) {
+    navigate(`/materials/${material.id}/preview`, { state: { from: location.pathname } })
+  }
+
+  async function handleDelete(material: MaterialDto) {
+    setMaterialToArchive(material)
+  }
+
+  async function confirmArchive() {
+    if (!materialToArchive) return
+
+    setError(null)
+    setMessage(null)
+    try {
+      await deleteMyUploadedMaterial(materialToArchive.id)
+      setMessage('החומר הועבר לארכיון.')
+      setMaterialToArchive(null)
+      await loadMaterials()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'לא ניתן לארכב את החומר.'))
+      setMaterialToArchive(null)
+    }
+  }
+
+  function startEdit(material: MaterialDto) {
+    setEditingMaterial(material)
+    setEditTitle(material.title)
+    setEditDescription(material.description ?? '')
+    setEditInstrumentId(String(material.instrumentId))
+    setEditLevel(material.level)
+    setEditFile(null)
+    setMessage(null)
+    setError(null)
+  }
+
+  async function handleSaveEdit(e: FormEvent) {
+    e.preventDefault()
+    if (!editingMaterial) return
+    if (!editTitle.trim()) {
+      setError('יש להזין כותרת לחומר.')
+      return
     }
 
-    loadMaterials()
-  }, [])
+    setError(null)
+    setMessage(null)
+    try {
+      const formData = new FormData()
+      formData.append('title', editTitle.trim())
+      formData.append('description', editDescription.trim())
+      formData.append('instrumentId', editInstrumentId)
+      formData.append('level', editLevel)
+      if (editFile) formData.append('file', editFile)
 
-  async function handlePreview(material: MaterialDto) {
-    await previewMaterial(material.id, material.fileName)
+      await updateMyUploadedMaterial(editingMaterial.id, formData)
+      setEditingMaterial(null)
+      setEditFile(null)
+      setMessage('החומר עודכן ונשלח מחדש לבדיקה.')
+      await loadMaterials()
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'לא ניתן לעדכן את החומר.'))
+    }
   }
 
   return (
@@ -68,88 +136,160 @@ export function MyUploadsPage() {
         </div>
         <div className="library-summary" aria-label="סיכום החומרים שלי">
           <span>
-            <strong>{materials.length}</strong>
+            <strong>{totalCount}</strong>
             חומרים
-          </span>
-          <span>
-            <strong>{approvedCount}</strong>
-            מאושרים
-          </span>
-          <span>
-            <strong>{totalLikes}</strong>
-            לייקים
           </span>
         </div>
       </div>
 
-      <div className="toolbar my-uploads-toolbar">
+      <form className="toolbar my-uploads-toolbar" onSubmit={handleSearch}>
         <label>
           חיפוש
           <input
-            placeholder="חיפוש לפי כותרת, מורה, כלי, סטטוס או קובץ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            placeholder="חיפוש לפי כותרת, כלי..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </label>
-        <label>
-          סטטוס
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          >
-            <option value="All">הכל</option>
-            <option value="Pending">{formatStatus('Pending')}</option>
-            <option value="Approved">{formatStatus('Approved')}</option>
-            <option value="Rejected">{formatStatus('Rejected')}</option>
-          </select>
-        </label>
-      </div>
+        <button type="submit" className="secondary-button">
+          חפש
+        </button>
+      </form>
 
       {loading && <p className="empty-state">טוען את החומרים שהעלית...</p>}
+      {message && <p className="success-text">{message}</p>}
       {error && <p className="error-text">{error}</p>}
-      {!loading && !error && materials.length === 0 && (
-        <p className="empty-state">עדיין לא העלית חומרים למערכת.</p>
+      {editingMaterial && (
+        <form className="form-panel upload-form" onSubmit={handleSaveEdit}>
+          <h2>עריכת חומר</h2>
+          <label>
+            <span>כותרת</span>
+            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={250} required />
+          </label>
+          <label>
+            <span>תיאור</span>
+            <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
+          </label>
+          <label>
+            <span>כלי נגינה</span>
+            <select value={editInstrumentId} onChange={(e) => setEditInstrumentId(e.target.value)} required>
+              {instruments.map((instrument) => (
+                <option value={instrument.id} key={instrument.id}>
+                  {instrument.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>רמת החומר</span>
+            <select value={editLevel} onChange={(e) => setEditLevel(e.target.value as MaterialDto['level'])}>
+              <option value="Beginner">מתחילים</option>
+              <option value="Advanced">מתקדמים</option>
+            </select>
+          </label>
+          <label className="file-dropzone">
+            <span className="file-dropzone-title">קובץ חדש (אופציונלי)</span>
+            <input type="file" onChange={(e) => setEditFile(e.target.files?.[0] ?? null)} />
+            <span className="file-picker-button">בחירת קובץ</span>
+            <strong>{editFile ? editFile.name : 'יישאר הקובץ הקיים'}</strong>
+          </label>
+          <div className="button-row">
+            <button type="submit">שמירה</button>
+            <button type="button" className="secondary-button" onClick={() => setEditingMaterial(null)}>
+              ביטול
+            </button>
+          </div>
+        </form>
       )}
-      {!loading && !error && materials.length > 0 && visibleMaterials.length === 0 && (
-        <p className="empty-state">לא נמצאו חומרים שמתאימים לסינון הנוכחי.</p>
+      {!loading && !error && totalCount === 0 && (
+        <p className="empty-state">
+          {search ? 'לא נמצאו חומרים התואמים את החיפוש.' : 'עדיין לא העלית חומרים למערכת.'}
+        </p>
       )}
 
       <div className="card-grid">
-        {visibleMaterials.map((material) => (
-          <article className="card library-card" key={material.id}>
-            <div className="card-header">
-              <div>
-                <span className="card-kicker">חומר שהעלית</span>
-                <h2>{material.title}</h2>
-              </div>
-              <div className="badge-stack">
-                <span className="badge instrument-badge">{material.instrumentName}</span>
-                <span className={`badge status-${material.status.toLowerCase()}`}>
-                  {formatStatus(material.status)}
-                </span>
-              </div>
-            </div>
-            {material.description && <p className="card-description">{material.description}</p>}
+        {materials.map((material) => {
+          const metaItems = [
+            `קובץ: ${material.fileName}`,
+            `הועלה: ${formatDateTime(material.createdAtUtc)}`,
+          ]
+          if (material.approvedAtUtc) {
+            metaItems.push(`אושר: ${formatDateTime(material.approvedAtUtc)}`)
+          }
+          if (material.rejectedAtUtc) {
+            metaItems.push(`נדחה: ${formatDateTime(material.rejectedAtUtc)}`)
+          }
 
-            <div className="material-meta">
-              <span>קובץ: {material.fileName}</span>
-              <span>הועלה: {formatDateTime(material.createdAtUtc)}</span>
-              {material.approvedAtUtc && <span>אושר: {formatDateTime(material.approvedAtUtc)}</span>}
-            </div>
+          const canManage = material.status !== 'Approved'
+          const menuItems = canManage
+            ? [
+                {
+                  label: 'עריכה',
+                  onClick: () => startEdit(material),
+                },
+                {
+                  label: 'ארכוב',
+                  onClick: () => void handleDelete(material),
+                  variant: 'danger' as const,
+                },
+              ]
+            : []
 
-            <div className="material-stats">
-              <span>{material.downloadCount} הורדות</span>
-              <span>{material.likeCount} לייקים</span>
-            </div>
-
-            <div className="button-row library-actions">
-              <button className="secondary-button preview-button" onClick={() => handlePreview(material)}>
-                צפייה בקובץ
-              </button>
-            </div>
-          </article>
-        ))}
+          return (
+            <MaterialCard
+              key={material.id}
+              kicker="חומר שהעלית"
+              title={material.title}
+              badges={[
+                { label: material.instrumentName, className: 'instrument-badge' },
+                { label: formatMaterialLevel(material.level) },
+                {
+                  label: formatStatus(material.status),
+                  className: `status-${material.status.toLowerCase()}`,
+                },
+              ]}
+              description={material.description ?? undefined}
+              metaItems={metaItems}
+              alert={
+                material.rejectionReason ? (
+                  <p className="empty-state">סיבת דחייה: {material.rejectionReason}</p>
+                ) : undefined
+              }
+              stats={
+                <div className="material-stats">
+                  <span>{material.downloadCount} הורדות</span>
+                  <span>{material.likeCount} לייקים</span>
+                </div>
+              }
+              footer={
+                <MaterialCardFooter
+                  primary={
+                    <Button variant="preview" onClick={() => handlePreview(material)}>
+                      צפייה בקובץ
+                    </Button>
+                  }
+                  tools={canManage ? <ActionMenu items={menuItems} /> : undefined}
+                />
+              }
+              footerNote={
+                !canManage ? (
+                  <p className="card-footer-note">חומר מאושר — לארכוב יש לפנות למנהל.</p>
+                ) : undefined
+              }
+            />
+          )
+        })}
       </div>
+      <Pager page={page} pageSize={PAGE_SIZE} totalCount={totalCount} onPageChange={setPage} />
+      {materialToArchive && (
+        <ConfirmDialog
+          title="ארכוב חומר"
+          message="לארכב את החומר הזה? הוא יוסר מהרשימה אך הקובץ לא יימחק פיזית."
+          confirmLabel="ארכוב"
+          onConfirm={() => void confirmArchive()}
+          onCancel={() => setMaterialToArchive(null)}
+        />
+      )}
     </section>
   )
 }

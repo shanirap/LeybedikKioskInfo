@@ -30,6 +30,9 @@ public class AdminController : ControllerBase
     public async Task<ActionResult<AdminUserDto>> CreateUser([FromBody] CreateUserRequest request)
     {
         var result = await _userService.CreateAsync(request, User.GetUserId());
+        if (result.Status == UserCreateStatus.BadRequest)
+            return BadRequest(new { message = result.ErrorMessage ?? "Invalid request." });
+
         if (result.Status == UserCreateStatus.Conflict)
             return Conflict(new { message = "Email is already in use." });
 
@@ -45,6 +48,9 @@ public class AdminController : ControllerBase
 
         if (result.Status == UserUpdateStatus.Conflict)
             return Conflict(new { message = "Email is already in use." });
+
+        if (result.Status == UserUpdateStatus.BadRequest)
+            return BadRequest(new { message = result.ErrorMessage ?? "Invalid request." });
 
         return Ok(result.User);
     }
@@ -85,6 +91,9 @@ public class AdminController : ControllerBase
     [HttpPost("instruments")]
     public async Task<ActionResult<InstrumentDto>> CreateInstrument([FromBody] CreateInstrumentRequest request)
     {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { message = "Instrument name is required." });
+
         var instrument = await _instrumentService.CreateAsync(request, User.GetUserId());
         if (instrument is null)
             return Conflict(new { message = "Instrument name is already in use." });
@@ -106,6 +115,9 @@ public class AdminController : ControllerBase
 
         if (result.Status == InstrumentUpdateStatus.Conflict)
             return Conflict(new { message = "Instrument name is already in use." });
+
+        if (result.Status == InstrumentUpdateStatus.BadRequest)
+            return BadRequest(new { message = result.ErrorMessage ?? "Invalid request." });
 
         return Ok(result.Instrument);
     }

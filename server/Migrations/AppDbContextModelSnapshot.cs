@@ -112,6 +112,12 @@ namespace LeybedikInfoKiosk.Server.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
@@ -120,8 +126,25 @@ namespace LeybedikInfoKiosk.Server.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<string>("FileHashSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
                     b.Property<int>("InstrumentId")
                         .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("Level")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<int>("LikeCount")
                         .ValueGeneratedOnAdd()
@@ -135,6 +158,22 @@ namespace LeybedikInfoKiosk.Server.Migrations
                     b.Property<string>("OriginalFilePath")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("RejectedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RejectedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("RestoredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RestoredByUserId")
+                        .HasColumnType("int");
 
                     b.Property<int>("Status")
                         .ValueGeneratedOnAdd()
@@ -153,9 +192,21 @@ namespace LeybedikInfoKiosk.Server.Migrations
 
                     b.HasIndex("ApprovedByUserId");
 
-                    b.HasIndex("InstrumentId");
+                    b.HasIndex("CreatedAtUtc");
 
-                    b.HasIndex("UploadedByUserId");
+                    b.HasIndex("DeletedAtUtc");
+
+                    b.HasIndex("DeletedByUserId");
+
+                    b.HasIndex("RejectedByUserId");
+
+                    b.HasIndex("RestoredByUserId");
+
+                    b.HasIndex("InstrumentId", "Status", "IsDeleted");
+
+                    b.HasIndex("IsDeleted", "Status", "ApprovedAtUtc");
+
+                    b.HasIndex("UploadedByUserId", "IsDeleted", "CreatedAtUtc");
 
                     b.ToTable("Materials");
                 });
@@ -251,11 +302,26 @@ namespace LeybedikInfoKiosk.Server.Migrations
                         .HasForeignKey("ApprovedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("LeybedikInfoKiosk.Server.Models.User", "DeletedByUser")
+                        .WithMany()
+                        .HasForeignKey("DeletedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("LeybedikInfoKiosk.Server.Models.Instrument", "Instrument")
                         .WithMany("Materials")
                         .HasForeignKey("InstrumentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("LeybedikInfoKiosk.Server.Models.User", "RejectedByUser")
+                        .WithMany()
+                        .HasForeignKey("RejectedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LeybedikInfoKiosk.Server.Models.User", "RestoredByUser")
+                        .WithMany()
+                        .HasForeignKey("RestoredByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("LeybedikInfoKiosk.Server.Models.User", "UploadedByUser")
                         .WithMany("UploadedMaterials")
@@ -263,7 +329,13 @@ namespace LeybedikInfoKiosk.Server.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("DeletedByUser");
+
                     b.Navigation("Instrument");
+
+                    b.Navigation("RejectedByUser");
+
+                    b.Navigation("RestoredByUser");
 
                     b.Navigation("UploadedByUser");
                 });

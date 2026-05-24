@@ -1,4 +1,5 @@
 using LeybedikInfoKiosk.Server.DTOs;
+using LeybedikInfoKiosk.Server.Models;
 using LeybedikInfoKiosk.Server.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,9 +25,22 @@ public class MaterialsController : ControllerBase
     }
 
     [HttpGet("my-uploads")]
-    public async Task<ActionResult<IReadOnlyCollection<MaterialDto>>> GetMyUploads()
+    public async Task<ActionResult<PagedResult<MaterialDto>>> GetMyUploads(
+        [FromQuery] string? search,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        return Ok(await _materialService.GetMyUploadsAsync(User));
+        return Ok(await _materialService.GetMyUploadsPagedAsync(User, search, page, pageSize));
+    }
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<MaterialDto>> GetPreviewDetails(int id)
+    {
+        var material = await _materialService.GetPreviewDetailsAsync(id, User);
+        if (material is null)
+            return NotFound();
+
+        return Ok(material);
     }
 
     [HttpPost("upload")]
@@ -37,7 +51,7 @@ public class MaterialsController : ControllerBase
         return result.Status switch
         {
             MaterialUploadStatus.Success => CreatedAtAction(
-                nameof(GetApproved),
+                nameof(GetPreviewDetails),
                 new { id = result.Material!.Id },
                 result.Material),
             MaterialUploadStatus.Forbidden => Forbid(),
@@ -52,7 +66,7 @@ public class MaterialsController : ControllerBase
         if (file is null)
             return NotFound(new { message = "Stored file was not found." });
 
-        return PhysicalFile(file.Path, file.ContentType, file.FileName);
+        return File(file.Stream, file.ContentType, file.FileName, enableRangeProcessing: true);
     }
 
     [HttpGet("{id:int}/preview")]
@@ -62,16 +76,47 @@ public class MaterialsController : ControllerBase
         if (file is null)
             return NotFound(new { message = "Stored file was not found." });
 
-        return PhysicalFile(file.Path, file.ContentType, enableRangeProcessing: true);
+        return File(file.Stream, file.ContentType, enableRangeProcessing: true);
     }
 
     [HttpPost("{id:int}/like")]
     public async Task<ActionResult<MaterialDto>> Like(int id)
     {
-        var material = await _materialService.LikeAsync(id, User);
-        if (material is null)
-            return NotFound();
+        var result = await _materialService.LikeAsync(id, User);
+        return result.Status switch
+        {
+            MaterialLikeStatus.Success => Ok(result.Material),
+            MaterialLikeStatus.NotFound => NotFound(),
+            _ => BadRequest(new { message = result.ErrorMessage ?? "Invalid request." }),
+        };
+    }
 
-        return Ok(material);
+    [HttpDelete("my-uploads/{id:int}")]
+    public async Task<IActionResult> DeleteMyUpload(int id)
+    {
+        var result = await _materialService.DeleteOwnAsync(id, User);
+        return result.Status switch
+        {
+            MaterialDeleteStatus.Success => NoContent(),
+            MaterialDeleteStatus.NotFound => NotFound(),
+            MaterialDeleteStatus.Forbidden => StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = result.ErrorMessage ?? "You cannot archive this material." }),
+            _ => Forbid(),
+        };
+    }
+
+    [HttpPut("my-uploads/{id:int}")]
+    [RequestSizeLimit(50_000_000)]
+    public async Task<ActionResult<MaterialDto>> UpdateMyUpload(int id, [FromForm] UpdateOwnMaterialRequest request)
+    {
+        var result = await _materialService.UpdateOwnAsync(id, request, User);
+        return result.Status switch
+        {
+            MaterialUpdateStatus.Success => Ok(result.Material),
+            MaterialUpdateStatus.NotFound => NotFound(),
+            MaterialUpdateStatus.Forbidden => Forbid(),
+            _ => BadRequest(new { message = result.ErrorMessage ?? "Invalid request." }),
+        };
     }
 }

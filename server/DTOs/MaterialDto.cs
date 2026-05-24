@@ -7,11 +7,17 @@ public record MaterialDto(
     int InstrumentId,
     string InstrumentName,
     string UploadedByName,
+    string UploadedByEmail,
+    string Level,
     string FileName,
     string Status,
     int DownloadCount,
     int LikeCount,
     bool IsLikedByCurrentUser,
     DateTime CreatedAtUtc,
-    DateTime? ApprovedAtUtc
+    DateTime? ApprovedAtUtc,
+    DateTime? RejectedAtUtc,
+    string? RejectionReason,
+    long? FileSizeBytes,
+    string? FileHashSha256
 );

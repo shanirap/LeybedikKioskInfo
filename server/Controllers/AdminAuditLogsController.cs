@@ -17,9 +17,19 @@ public class AdminAuditLogsController : ControllerBase
         _auditLogService = auditLogService;
     }
 
-    [HttpGet]
-    public async Task<ActionResult<IReadOnlyCollection<AuditLogDto>>> Get([FromQuery] int take = 100)
+    /// <summary>Legacy endpoint kept for backward compatibility; returns up to 500 most recent logs.</summary>
+    [HttpGet("recent")]
+    public async Task<ActionResult<IReadOnlyCollection<AuditLogDto>>> GetRecent([FromQuery] int take = 100)
     {
         return Ok(await _auditLogService.GetRecentAsync(take));
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<AuditLogDto>>> Get(
+        [FromQuery] string? search,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        return Ok(await _auditLogService.GetPagedAsync(search, page, pageSize));
     }
 }

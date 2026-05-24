@@ -11,6 +11,8 @@ export interface MaterialDto {
   instrumentId: number
   instrumentName: string
   uploadedByName: string
+  uploadedByEmail: string
+  level: 'Beginner' | 'Advanced'
   fileName: string
   status: 'Pending' | 'Approved' | 'Rejected'
   downloadCount: number
@@ -18,6 +20,17 @@ export interface MaterialDto {
   isLikedByCurrentUser: boolean
   createdAtUtc: string
   approvedAtUtc: string | null
+  rejectedAtUtc: string | null
+  rejectionReason: string | null
+  fileSizeBytes: number | null
+  fileHashSha256: string | null
+}
+
+export interface PagedResult<T> {
+  items: T[]
+  totalCount: number
+  page: number
+  pageSize: number
 }
 
 export interface AdminUserDto {

@@ -1,9 +1,7 @@
-import type { AuditLogDto } from '../types/material'
+import type { AuditLogDto, PagedResult } from '../types/material'
 import { apiClient } from './apiClient'
 
-export async function getAuditLogs(take = 100) {
-  const { data } = await apiClient.get<AuditLogDto[]>('/admin/audit-logs', {
-    params: { take },
-  })
+export async function getAuditLogsPaged(params?: { search?: string; page?: number; pageSize?: number }) {
+  const { data } = await apiClient.get<PagedResult<AuditLogDto>>('/admin/audit-logs', { params })
   return data
 }

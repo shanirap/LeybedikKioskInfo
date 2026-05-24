@@ -3,6 +3,7 @@ import {
   formatAuditAction,
   formatDate,
   formatEntityType,
+  formatMaterialLevel,
   formatRole,
   formatStatus,
 } from './displayText'
@@ -14,6 +15,8 @@ describe('display text helpers', () => {
     expect(formatStatus('Pending')).toBe('ממתין לאישור')
     expect(formatStatus('Approved')).toBe('מאושר')
     expect(formatStatus('Rejected')).toBe('נדחה')
+    expect(formatMaterialLevel('Beginner')).toBe('מתחילים')
+    expect(formatMaterialLevel('Advanced')).toBe('מתקדמים')
     expect(formatAuditAction('ApproveMaterial')).toBe('אישור חומר')
     expect(formatEntityType('Instrument')).toBe('כלי נגינה')
   })

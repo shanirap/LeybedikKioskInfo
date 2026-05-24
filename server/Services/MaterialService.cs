@@ -25,19 +25,16 @@ public class MaterialService
     private const long MaxUploadBytes = 50_000_000;
 
     private readonly AppDbContext _db;
-    private readonly IWebHostEnvironment _environment;
-    private readonly IConfiguration _configuration;
+    private readonly IFileStorageService _fileStorage;
     private readonly AuditLogService _auditLogService;
 
     public MaterialService(
         AppDbContext db,
-        IWebHostEnvironment environment,
-        IConfiguration configuration,
+        IFileStorageService fileStorage,
         AuditLogService auditLogService)
     {
         _db = db;
-        _environment = environment;
-        _configuration = configuration;
+        _fileStorage = fileStorage;
         _auditLogService = auditLogService;
     }
 
@@ -58,27 +55,62 @@ public class MaterialService
             .AsNoTracking()
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
-            .Where(m => m.UploadedByUserId == userId)
+            .Where(m => !m.IsDeleted && m.UploadedByUserId == userId)
             .OrderByDescending(m => m.CreatedAtUtc)
             .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
             .ToListAsync();
     }
 
-    public async Task<IReadOnlyCollection<MaterialDto>> GetAdminMaterialsAsync(MaterialStatus? status)
+    public async Task<MaterialDto?> GetPreviewDetailsAsync(int id, ClaimsPrincipal user)
     {
+        var userId = user.GetUserId();
+        return await PreviewableMaterialsQuery(user)
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .Where(m => m.Id == id)
+            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<PagedResult<MaterialDto>> GetAdminMaterialsAsync(
+        MaterialStatus? status,
+        string? search,
+        int page,
+        int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var query = _db.Materials
             .AsNoTracking()
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
+            .Where(m => !m.IsDeleted)
             .AsQueryable();
 
         if (status is not null)
             query = query.Where(m => m.Status == status);
 
-        return await query
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m =>
+                m.Title.Contains(term) ||
+                (m.UploadedByUser.FullName != null && m.UploadedByUser.FullName.Contains(term)) ||
+                m.UploadedByUser.Email.Contains(term) ||
+                m.Instrument.Name.Contains(term));
+        }
+
+        var totalCount = await query.CountAsync();
+        var items = await query
             .OrderByDescending(m => m.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(m => ToDto(m, false))
             .ToListAsync();
+
+        return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
     }
 
     public async Task<IReadOnlyCollection<MaterialDto>> GetPendingAsync()
@@ -87,33 +119,93 @@ public class MaterialService
             .AsNoTracking()
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
-            .Where(m => m.Status == MaterialStatus.Pending)
+            .Where(m => !m.IsDeleted && m.Status == MaterialStatus.Pending)
             .OrderBy(m => m.CreatedAtUtc)
             .Select(m => ToDto(m, false))
             .ToListAsync();
     }
 
+    public async Task<PagedResult<MaterialDto>> GetArchivedAsync(string? search, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _db.Materials
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .Where(m => m.IsDeleted)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m =>
+                m.Title.Contains(term) ||
+                (m.UploadedByUser.FullName != null && m.UploadedByUser.FullName.Contains(term)) ||
+                m.UploadedByUser.Email.Contains(term) ||
+                m.Instrument.Name.Contains(term));
+        }
+
+        var totalCount = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(m => m.DeletedAtUtc ?? m.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => ToDto(m, false))
+            .ToListAsync();
+
+        return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
+    }
+
+    public async Task<PagedResult<MaterialDto>> GetMyUploadsPagedAsync(ClaimsPrincipal user, string? search, int page, int pageSize)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var userId = user.GetUserId();
+
+        var query = _db.Materials
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .Where(m => !m.IsDeleted && m.UploadedByUserId == userId)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m => m.Title.Contains(term) || m.Instrument.Name.Contains(term));
+        }
+
+        var totalCount = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(m => m.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .ToListAsync();
+
+        return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
+    }
+
     public async Task<MaterialUploadResult> UploadAsync(UploadMaterialRequest request, ClaimsPrincipal user)
     {
-        var validationError = ValidateUpload(request.File);
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return MaterialUploadResult.Invalid("Material title is required.");
+
+        var validationError = await ValidateUploadAsync(request.File);
         if (validationError is not null)
             return MaterialUploadResult.Invalid(validationError);
 
         if (!await CanUseInstrument(request.InstrumentId, user))
             return MaterialUploadResult.Forbidden();
 
-        var extension = Path.GetExtension(request.File.FileName);
-        var uploadsDir = Path.Combine(GetStorageRoot(), "originals");
-        Directory.CreateDirectory(uploadsDir);
-
+        var originalFileName = Path.GetFileName(request.File.FileName);
+        var extension = GetNormalizedExtension(originalFileName);
         var storedFileName = $"{Guid.NewGuid():N}{extension}";
-        var physicalPath = Path.Combine(uploadsDir, storedFileName);
-        var relativePath = Path.Combine(GetStorageRootName(), "originals", storedFileName);
 
-        await using (var stream = File.Create(physicalPath))
-        {
-            await request.File.CopyToAsync(stream);
-        }
+        var (fileSizeBytes, fileHash) = await ComputeFileSizeAndHashAsync(request.File);
+        var storedFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
 
         var material = new Material
         {
@@ -121,16 +213,25 @@ public class MaterialService
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             InstrumentId = request.InstrumentId,
             UploadedByUserId = user.GetUserId(),
+            Level = request.Level,
             Status = MaterialStatus.Pending,
-            OriginalFilePath = relativePath,
-            OriginalFileName = Path.GetFileName(request.File.FileName),
+            OriginalFilePath = storedFile.Path,
+            OriginalFileName = originalFileName,
             DownloadCount = 0,
             LikeCount = 0,
+            FileSizeBytes = fileSizeBytes,
+            FileHashSha256 = fileHash,
             CreatedAtUtc = DateTime.UtcNow,
         };
 
         _db.Materials.Add(material);
         await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            user.GetUserId(),
+            "UploadMaterial",
+            "Material",
+            material.Id,
+            $"Uploaded material {material.Title}.");
 
         var created = await _db.Materials
             .AsNoTracking()
@@ -153,10 +254,11 @@ public class MaterialService
         if (material is null)
             return null;
 
-        var path = ResolveStoragePath(material.ApprovedFilePath ?? material.OriginalFilePath);
+        var storedPath = material.ApprovedFilePath ?? material.OriginalFilePath;
         var fileName = material.ApprovedFileName ?? material.OriginalFileName;
+        var stream = await _fileStorage.OpenReadAsync(storedPath);
 
-        if (!File.Exists(path))
+        if (stream is null)
             return null;
 
         if (!adminReview)
@@ -165,7 +267,7 @@ public class MaterialService
             await _db.SaveChangesAsync();
         }
 
-        return new StoredFileResult(path, fileName, GetContentType(fileName));
+        return new StoredFileResult(stream, fileName, GetContentType(fileName));
     }
 
     public async Task<StoredFileResult?> GetPreviewAsync(int id, ClaimsPrincipal user)
@@ -176,15 +278,16 @@ public class MaterialService
         if (material is null)
             return null;
 
-        var path = ResolveStoragePath(material.ApprovedFilePath ?? material.OriginalFilePath);
+        var storedPath = material.ApprovedFilePath ?? material.OriginalFilePath;
         var fileName = material.ApprovedFileName ?? material.OriginalFileName;
+        var stream = await _fileStorage.OpenReadAsync(storedPath);
 
-        return File.Exists(path)
-            ? new StoredFileResult(path, fileName, GetContentType(fileName))
-            : null;
+        return stream is null
+            ? null
+            : new StoredFileResult(stream, fileName, GetContentType(fileName));
     }
 
-    public async Task<MaterialDto?> LikeAsync(int id, ClaimsPrincipal user)
+    public async Task<MaterialLikeResult> LikeAsync(int id, ClaimsPrincipal user)
     {
         var userId = user.GetUserId();
         var material = await VisibleMaterialsQuery(user)
@@ -193,13 +296,16 @@ public class MaterialService
             .FirstOrDefaultAsync(m => m.Id == id);
 
         if (material is null)
-            return null;
+            return MaterialLikeResult.NotFound();
+
+        if (material.UploadedByUserId == userId)
+            return MaterialLikeResult.Invalid("Cannot like your own material.");
 
         var alreadyLiked = await _db.MaterialLikes.AnyAsync(like =>
             like.MaterialId == id &&
             like.UserId == userId);
         if (alreadyLiked)
-            return ToDto(material, true);
+            return MaterialLikeResult.Success(ToDto(material, true));
 
         _db.MaterialLikes.Add(new MaterialLike
         {
@@ -210,7 +316,7 @@ public class MaterialService
         material.LikeCount += 1;
         await _db.SaveChangesAsync();
 
-        return ToDto(material, true);
+        return MaterialLikeResult.Success(ToDto(material, true));
     }
 
     public async Task<MaterialDto?> ApproveAsync(int id, int actorUserId)
@@ -218,7 +324,7 @@ public class MaterialService
         var material = await _db.Materials
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
-            .FirstOrDefaultAsync(m => m.Id == id);
+            .FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
 
         if (material is null)
             return null;
@@ -228,6 +334,9 @@ public class MaterialService
         material.ApprovedByUserId = actorUserId;
         material.ApprovedFilePath ??= material.OriginalFilePath;
         material.ApprovedFileName ??= material.OriginalFileName;
+        material.RejectedAtUtc = null;
+        material.RejectedByUserId = null;
+        material.RejectionReason = null;
 
         await _db.SaveChangesAsync();
         await _auditLogService.AddAsync(
@@ -240,12 +349,12 @@ public class MaterialService
         return ToDto(material, false);
     }
 
-    public async Task<MaterialDto?> RejectAsync(int id, int actorUserId)
+    public async Task<MaterialDto?> RejectAsync(int id, RejectMaterialRequest request, int actorUserId)
     {
         var material = await _db.Materials
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
-            .FirstOrDefaultAsync(m => m.Id == id);
+            .FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
 
         if (material is null)
             return null;
@@ -255,6 +364,9 @@ public class MaterialService
         material.ApprovedByUserId = null;
         material.ApprovedFilePath = null;
         material.ApprovedFileName = null;
+        material.RejectedAtUtc = DateTime.UtcNow;
+        material.RejectedByUserId = actorUserId;
+        material.RejectionReason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
 
         await _db.SaveChangesAsync();
         await _auditLogService.AddAsync(
@@ -267,11 +379,220 @@ public class MaterialService
         return ToDto(material, false);
     }
 
+    public async Task<MaterialDeleteResult> DeleteByAdminAsync(int id, int actorUserId)
+    {
+        var material = await _db.Materials.FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
+        if (material is null)
+            return MaterialDeleteResult.NotFound();
+
+        material.IsDeleted = true;
+        material.DeletedAtUtc = DateTime.UtcNow;
+        material.DeletedByUserId = actorUserId;
+        await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            actorUserId,
+            "DeleteMaterialByAdmin",
+            "Material",
+            material.Id,
+            $"Archived material {material.Title}.");
+
+        return MaterialDeleteResult.Success();
+    }
+
+    public async Task<MaterialDeleteResult> DeleteOwnAsync(int id, ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        var material = await _db.Materials.FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
+        if (material is null)
+            return MaterialDeleteResult.NotFound();
+
+        if (material.UploadedByUserId != userId)
+            return MaterialDeleteResult.Forbidden();
+
+        if (material.Status == MaterialStatus.Approved)
+            return MaterialDeleteResult.Forbidden("Approved materials can only be archived by an admin.");
+
+        material.IsDeleted = true;
+        material.DeletedAtUtc = DateTime.UtcNow;
+        material.DeletedByUserId = userId;
+        await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            userId,
+            "DeleteOwnMaterial",
+            "Material",
+            material.Id,
+            $"Archived own material {material.Title}.");
+
+        return MaterialDeleteResult.Success();
+    }
+
+    public async Task<MaterialDto?> RestoreByAdminAsync(int id, int actorUserId)
+    {
+        var material = await _db.Materials
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .FirstOrDefaultAsync(m => m.IsDeleted && m.Id == id);
+        if (material is null)
+            return null;
+
+        material.IsDeleted = false;
+        material.DeletedAtUtc = null;
+        material.DeletedByUserId = null;
+        material.RestoredAtUtc = DateTime.UtcNow;
+        material.RestoredByUserId = actorUserId;
+
+        await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            actorUserId,
+            "RestoreMaterial",
+            "Material",
+            material.Id,
+            $"Restored material {material.Title}.");
+
+        return ToDto(material, false);
+    }
+
+    public async Task<MaterialUpdateResult> UpdateOwnAsync(int id, UpdateOwnMaterialRequest request, ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        var material = await _db.Materials
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
+        if (material is null)
+            return MaterialUpdateResult.NotFound();
+
+        if (material.UploadedByUserId != userId || material.Status == MaterialStatus.Approved)
+            return MaterialUpdateResult.Forbidden();
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return MaterialUpdateResult.Invalid("Material title is required.");
+
+        if (!await CanUseInstrument(request.InstrumentId, user))
+            return MaterialUpdateResult.Forbidden();
+
+        if (request.File is not null)
+        {
+            var validationError = await ValidateUploadAsync(request.File);
+            if (validationError is not null)
+                return MaterialUpdateResult.Invalid(validationError);
+
+            var originalFileName = Path.GetFileName(request.File.FileName);
+            var extension = GetNormalizedExtension(originalFileName);
+            var storedFileName = $"{Guid.NewGuid():N}{extension}";
+            var (fileSizeBytes, fileHash) = await ComputeFileSizeAndHashAsync(request.File);
+            var storedFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
+            material.OriginalFilePath = storedFile.Path;
+            material.OriginalFileName = originalFileName;
+            material.FileSizeBytes = fileSizeBytes;
+            material.FileHashSha256 = fileHash;
+        }
+
+        material.Title = request.Title.Trim();
+        material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        material.InstrumentId = request.InstrumentId;
+        material.Level = request.Level;
+        material.Status = MaterialStatus.Pending;
+        material.ApprovedAtUtc = null;
+        material.ApprovedByUserId = null;
+        material.ApprovedFilePath = null;
+        material.ApprovedFileName = null;
+        material.RejectedAtUtc = null;
+        material.RejectedByUserId = null;
+        material.RejectionReason = null;
+
+        await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            userId,
+            "UpdateOwnMaterial",
+            "Material",
+            material.Id,
+            $"Updated own material {material.Title}.");
+
+        var updated = await _db.Materials
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .Where(m => m.Id == material.Id)
+            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .FirstAsync();
+
+        return MaterialUpdateResult.Success(updated);
+    }
+
+    public async Task<MaterialUpdateResult> UpdateByAdminAsync(int id, UpdateAdminMaterialRequest request, int actorUserId)
+    {
+        var material = await _db.Materials
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .FirstOrDefaultAsync(m => !m.IsDeleted && m.Id == id);
+        if (material is null)
+            return MaterialUpdateResult.NotFound();
+
+        if (material.Status == MaterialStatus.Approved)
+            return MaterialUpdateResult.Invalid("Approved materials cannot be edited.");
+
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return MaterialUpdateResult.Invalid("Material title is required.");
+
+        if (!await _db.Instruments.AnyAsync(i => i.Id == request.InstrumentId && i.IsActive))
+            return MaterialUpdateResult.Invalid("Instrument is not available.");
+
+        if (request.File is not null)
+        {
+            var validationError = await ValidateUploadAsync(request.File);
+            if (validationError is not null)
+                return MaterialUpdateResult.Invalid(validationError);
+
+            var originalFileName = Path.GetFileName(request.File.FileName);
+            var extension = GetNormalizedExtension(originalFileName);
+            var storedFileName = $"{Guid.NewGuid():N}{extension}";
+            var (fileSizeBytes, fileHash) = await ComputeFileSizeAndHashAsync(request.File);
+            var storedFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
+            material.OriginalFilePath = storedFile.Path;
+            material.OriginalFileName = originalFileName;
+            material.FileSizeBytes = fileSizeBytes;
+            material.FileHashSha256 = fileHash;
+        }
+
+        material.Title = request.Title.Trim();
+        material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        material.InstrumentId = request.InstrumentId;
+        material.Level = request.Level;
+        material.Status = MaterialStatus.Pending;
+        material.ApprovedAtUtc = null;
+        material.ApprovedByUserId = null;
+        material.ApprovedFilePath = null;
+        material.ApprovedFileName = null;
+        material.RejectedAtUtc = null;
+        material.RejectedByUserId = null;
+        material.RejectionReason = null;
+
+        await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            actorUserId,
+            "UpdateMaterialByAdmin",
+            "Material",
+            material.Id,
+            $"Updated material {material.Title} before approval.");
+
+        var updated = await _db.Materials
+            .AsNoTracking()
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .Where(m => m.Id == material.Id)
+            .Select(m => ToDto(m, false))
+            .FirstAsync();
+
+        return MaterialUpdateResult.Success(updated);
+    }
+
     private IQueryable<Material> VisibleMaterialsQuery(ClaimsPrincipal user)
     {
         var query = _db.Materials
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
+            .Where(m => !m.IsDeleted)
             .AsQueryable();
 
         if (user.IsAdmin())
@@ -290,9 +611,10 @@ public class MaterialService
 
         var userId = user.GetUserId();
         return _db.Materials.Where(m =>
-            m.UploadedByUserId == userId ||
-            (m.Status == MaterialStatus.Approved &&
-             m.Instrument.UserInstruments.Any(ui => ui.UserId == userId)));
+            !m.IsDeleted &&
+            (m.UploadedByUserId == userId ||
+             (m.Status == MaterialStatus.Approved &&
+              m.Instrument.UserInstruments.Any(ui => ui.UserId == userId))));
     }
 
     private async Task<bool> CanUseInstrument(int instrumentId, ClaimsPrincipal user)
@@ -307,7 +629,7 @@ public class MaterialService
             ui.Instrument.IsActive);
     }
 
-    private static string? ValidateUpload(IFormFile file)
+    private static async Task<string?> ValidateUploadAsync(IFormFile file)
     {
         if (file.Length == 0)
             return "File is required.";
@@ -315,7 +637,11 @@ public class MaterialService
         if (file.Length > MaxUploadBytes)
             return "File is too large. Maximum size is 50 MB.";
 
-        var extension = Path.GetExtension(file.FileName);
+        var fileName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrWhiteSpace(fileName))
+            return "File name is required.";
+
+        var extension = GetNormalizedExtension(fileName);
         if (!AllowedFileTypes.TryGetValue(extension, out var allowedContentTypes))
             return "File type is not allowed.";
 
@@ -325,26 +651,50 @@ public class MaterialService
             return "File content type is not allowed.";
         }
 
+        if (!await HasExpectedSignatureAsync(file, extension))
+            return "File signature does not match file type.";
+
         return null;
     }
 
-    private string ResolveStoragePath(string path)
+    private static string GetNormalizedExtension(string fileName)
     {
-        return Path.IsPathRooted(path) ? path : Path.Combine(_environment.ContentRootPath, path);
+        return Path.GetExtension(fileName).ToLowerInvariant();
     }
 
-    private string GetStorageRoot()
+    private static async Task<(long sizeBytes, string sha256Hex)> ComputeFileSizeAndHashAsync(IFormFile file)
     {
-        var configured = _configuration["Storage:RootPath"];
-        if (!string.IsNullOrWhiteSpace(configured))
-            return Path.IsPathRooted(configured) ? configured : Path.Combine(_environment.ContentRootPath, configured);
-
-        return Path.Combine(_environment.ContentRootPath, GetStorageRootName());
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        await using var stream = file.OpenReadStream();
+        var hash = await sha256.ComputeHashAsync(stream);
+        return (file.Length, Convert.ToHexString(hash).ToLowerInvariant());
     }
 
-    private string GetStorageRootName()
+    private static async Task<bool> HasExpectedSignatureAsync(IFormFile file, string extension)
     {
-        return _configuration["Storage:RootPath"] ?? "Storage";
+        var expectedHeaderLength = extension switch
+        {
+            ".pdf" => 4,
+            ".png" => 8,
+            ".jpg" or ".jpeg" => 3,
+            _ => 0,
+        };
+        if (expectedHeaderLength == 0)
+            return true;
+
+        var buffer = new byte[expectedHeaderLength];
+        await using var stream = file.OpenReadStream();
+        var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, expectedHeaderLength));
+        if (bytesRead < expectedHeaderLength)
+            return false;
+
+        return extension switch
+        {
+            ".pdf" => buffer.AsSpan().SequenceEqual("%PDF"u8),
+            ".png" => buffer.AsSpan().SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
+            ".jpg" or ".jpeg" => buffer[0] == 0xFF && buffer[1] == 0xD8 && buffer[2] == 0xFF,
+            _ => true,
+        };
     }
 
     private static string GetContentType(string fileName)
@@ -371,17 +721,23 @@ public class MaterialService
             material.InstrumentId,
             material.Instrument.Name,
             material.UploadedByUser.FullName,
+            material.UploadedByUser.Email,
+            material.Level.ToString(),
             material.ApprovedFileName ?? material.OriginalFileName,
             material.Status.ToString(),
             material.DownloadCount,
             material.LikeCount,
             isLikedByCurrentUser,
             material.CreatedAtUtc,
-            material.ApprovedAtUtc);
+            material.ApprovedAtUtc,
+            material.RejectedAtUtc,
+            material.RejectionReason,
+            material.FileSizeBytes,
+            material.FileHashSha256);
     }
 }
 
-public record StoredFileResult(string Path, string FileName, string ContentType);
+public record StoredFileResult(Stream Stream, string FileName, string ContentType);
 
 public record MaterialUploadResult(
     MaterialUploadStatus Status,
@@ -403,4 +759,69 @@ public enum MaterialUploadStatus
     Success,
     Invalid,
     Forbidden,
+}
+
+public record MaterialDeleteResult(MaterialDeleteStatus Status, string? ErrorMessage = null)
+{
+    public static MaterialDeleteResult Success() => new(MaterialDeleteStatus.Success);
+
+    public static MaterialDeleteResult NotFound() => new(MaterialDeleteStatus.NotFound);
+
+    public static MaterialDeleteResult Forbidden(string? message = null) =>
+        new(MaterialDeleteStatus.Forbidden, message);
+}
+
+public enum MaterialDeleteStatus
+{
+    Success,
+    NotFound,
+    Forbidden,
+}
+
+public record MaterialUpdateResult(
+    MaterialUpdateStatus Status,
+    MaterialDto? Material = null,
+    string? ErrorMessage = null)
+{
+    public static MaterialUpdateResult Success(MaterialDto material)
+        => new(MaterialUpdateStatus.Success, material);
+
+    public static MaterialUpdateResult NotFound()
+        => new(MaterialUpdateStatus.NotFound);
+
+    public static MaterialUpdateResult Forbidden()
+        => new(MaterialUpdateStatus.Forbidden);
+
+    public static MaterialUpdateResult Invalid(string message)
+        => new(MaterialUpdateStatus.Invalid, ErrorMessage: message);
+}
+
+public enum MaterialUpdateStatus
+{
+    Success,
+    NotFound,
+    Forbidden,
+    Invalid,
+}
+
+public record MaterialLikeResult(
+    MaterialLikeStatus Status,
+    MaterialDto? Material = null,
+    string? ErrorMessage = null)
+{
+    public static MaterialLikeResult Success(MaterialDto material)
+        => new(MaterialLikeStatus.Success, material);
+
+    public static MaterialLikeResult NotFound()
+        => new(MaterialLikeStatus.NotFound);
+
+    public static MaterialLikeResult Invalid(string message)
+        => new(MaterialLikeStatus.Invalid, ErrorMessage: message);
+}
+
+public enum MaterialLikeStatus
+{
+    Success,
+    NotFound,
+    Invalid,
 }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
 import { login as loginApi } from '../api/authApi'
 import { useAuth } from '../utils/useAuth'
-import { APP_TAGLINE, APP_TITLE, INSTITUTION_LOGO_SRC } from '../utils/displayText'
+import { APP_TITLE, INSTITUTION_LOGO_SRC } from '../utils/displayText'
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -38,7 +38,6 @@ export function LoginPage() {
       <form className="login-form" onSubmit={handleSubmit}>
         <div className="login-brand">
           <img src={INSTITUTION_LOGO_SRC} alt="לוגו לייבעדיק" />
-          <p>{APP_TAGLINE}</p>
         </div>
         <h2>כניסה למערכת {APP_TITLE}</h2>
 

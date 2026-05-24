@@ -18,9 +18,10 @@ public class AuthService
 
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
+        var email = request.Email.Trim().ToLowerInvariant();
         var user = await _db.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
+            .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
 
         if (user is null || !PasswordHasher.VerifyPassword(user.PasswordHash, request.Password))
             return null;

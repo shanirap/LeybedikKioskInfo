@@ -1,0 +1,87 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: ${APP_CONNECTION_STRING}
+      Jwt__Secret: ${APP_JWT_SECRET}
+      Jwt__Issuer: ${APP_JWT_ISSUER:-LeybedikInfoKiosk}
+      Jwt__Audience: ${APP_JWT_AUDIENCE:-LeybedikInfoKioskClient}
+      Jwt__ExpiryMinutes: ${APP_JWT_EXPIRY_MINUTES:-120}
+      Storage__Provider: S3
+      Storage__S3__Endpoint: http://minio:9000
+      Storage__S3__Bucket: ${MINIO_BUCKET:-leybedik-materials}
+      Storage__S3__AccessKey: ${MINIO_ROOT_USER}
+      Storage__S3__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Storage__S3__Region: ${MINIO_REGION:-us-east-1}
+      Storage__S3__ForcePathStyle: "true"
+      Cors__AllowedOrigins__0: ${APP_ORIGIN}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"${MINIO_ROOT_USER}\" \"${MINIO_ROOT_PASSWORD}\" &&
+      mc mb --ignore-existing local/${MINIO_BUCKET:-leybedik-materials}
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-leybedik-materials}
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["with-sqlserver"]
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID:-Express}
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
+volumes:
+  caddy_data:
+  caddy_config:
+  minio_data:
+  sqlserver_data:

@@ -1,12 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { getApiErrorMessage } from '../api/apiClient'
 import {
-  createAdminInstrument,
   createAdminUser,
   getAdminInstruments,
   getAdminUsers,
   resetAdminUserPassword,
-  updateAdminInstrument,
   updateAdminUser,
   updateAdminUserInstruments,
 } from '../api/instrumentsApi'
@@ -37,11 +35,6 @@ export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUserDto[]>([])
   const [instruments, setInstruments] = useState<InstrumentDto[]>([])
   const [newUser, setNewUser] = useState<UserFormState>(emptyForm)
-  const [newInstrumentName, setNewInstrumentName] = useState('')
-  const [newInstrumentIsActive, setNewInstrumentIsActive] = useState(true)
-  const [editingInstrumentId, setEditingInstrumentId] = useState<number | null>(null)
-  const [instrumentEditName, setInstrumentEditName] = useState('')
-  const [instrumentEditIsActive, setInstrumentEditIsActive] = useState(true)
   const [editingUserId, setEditingUserId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<UserFormState>(emptyForm)
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null)
@@ -154,46 +147,6 @@ export function AdminUsersPage() {
     })
   }
 
-  async function handleCreateInstrument(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setMessage(null)
-    try {
-      await createAdminInstrument({
-        name: newInstrumentName,
-        isActive: newInstrumentIsActive,
-      })
-      setNewInstrumentName('')
-      setNewInstrumentIsActive(true)
-      setMessage('הכלי נוצר.')
-      await loadData()
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן ליצור כלי. ודא שהשם ייחודי.'))
-    }
-  }
-
-  function startInstrumentEdit(instrument: InstrumentDto) {
-    setEditingInstrumentId(instrument.id)
-    setInstrumentEditName(instrument.name)
-    setInstrumentEditIsActive(instrument.isActive)
-  }
-
-  async function handleSaveInstrument(instrumentId: number) {
-    setError(null)
-    setMessage(null)
-    try {
-      await updateAdminInstrument(instrumentId, {
-        name: instrumentEditName,
-        isActive: instrumentEditIsActive,
-      })
-      setEditingInstrumentId(null)
-      setMessage('הכלי עודכן.')
-      await loadData()
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לעדכן כלי. ודא שהשם ייחודי.'))
-    }
-  }
-
   return (
     <section>
       <h1>משתמשים</h1>
@@ -202,70 +155,6 @@ export function AdminUsersPage() {
       {loading && <p>טוען משתמשים...</p>}
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}
-
-      <section className="admin-section">
-        <h2>ניהול כלי נגינה</h2>
-        <form className="inline-form" onSubmit={handleCreateInstrument}>
-          <input
-            placeholder="שם כלי"
-            value={newInstrumentName}
-            onChange={(e) => setNewInstrumentName(e.target.value)}
-            required
-            maxLength={100}
-          />
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={newInstrumentIsActive}
-              onChange={(e) => setNewInstrumentIsActive(e.target.checked)}
-            />
-            פעיל
-          </label>
-          <button type="submit">הוסף כלי</button>
-        </form>
-
-        <div className="instrument-list">
-          {instruments.map((instrument) => (
-            <div className="instrument-row" key={instrument.id}>
-              {editingInstrumentId === instrument.id ? (
-                <>
-                  <input
-                    value={instrumentEditName}
-                    onChange={(e) => setInstrumentEditName(e.target.value)}
-                    maxLength={100}
-                    required
-                  />
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={instrumentEditIsActive}
-                      onChange={(e) => setInstrumentEditIsActive(e.target.checked)}
-                    />
-                    פעיל
-                  </label>
-                  <button onClick={() => handleSaveInstrument(instrument.id)}>שמירה</button>
-                  <button
-                    className="secondary-button"
-                    onClick={() => setEditingInstrumentId(null)}
-                  >
-                    ביטול
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span>
-                    {instrument.name}{' '}
-                    <span className="muted">
-                      {instrument.isActive ? '(פעיל)' : '(לא פעיל)'}
-                    </span>
-                  </span>
-                  <button onClick={() => startInstrumentEdit(instrument)}>עריכה</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
 
       <form className="form-panel admin-user-form" onSubmit={handleCreate}>
         <h2>יצירת משתמש</h2>
@@ -367,13 +256,14 @@ export function AdminUsersPage() {
                       <td>
                         <select
                           value={editForm.role}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const newRole = e.target.value as Role
                             setEditForm({
                               ...editForm,
-                              role: e.target.value as Role,
-                              instrumentIds: [],
+                              role: newRole,
+                              instrumentIds: newRole === 'Admin' ? [] : editForm.instrumentIds,
                             })
-                          }
+                          }}
                         >
                           <option value="Teacher">{formatRole('Teacher')}</option>
                           <option value="Admin">{formatRole('Admin')}</option>

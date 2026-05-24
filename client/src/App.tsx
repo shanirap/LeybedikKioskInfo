@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
-import { APP_TAGLINE, APP_TITLE, formatRole, INSTITUTION_LOGO_SRC } from './utils/displayText'
+import { APP_TITLE, formatRole, INSTITUTION_LOGO_SRC } from './utils/displayText'
 import { useAuth } from './utils/useAuth'
 import './App.css'
 
@@ -19,7 +19,6 @@ export default function App() {
           <img className="brand-logo" src={INSTITUTION_LOGO_SRC} alt="לוגו לייבעדיק" />
           <span className="brand-text">
             <strong>{APP_TITLE}</strong>
-            <span>{APP_TAGLINE}</span>
           </span>
         </Link>
 
@@ -35,8 +34,10 @@ export default function App() {
             )}
             {user.role === 'Admin' && (
               <>
-                <Link to="/admin/pending-materials">חומרים לאישור</Link>
                 <Link to="/admin/users">משתמשים</Link>
+                <Link to="/admin/instruments">כלי נגינה</Link>
+                <Link to="/admin/pending-materials">ניהול חומרים</Link>
+                <Link to="/admin/archived-materials">ארכיון חומרים</Link>
                 <Link to="/admin/audit-logs">יומן פעילות</Link>
               </>
             )}

@@ -3,9 +3,12 @@ import App from '../App'
 import { AccountPage } from '../pages/AccountPage'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { AdminAuditLogsPage } from '../pages/AdminAuditLogsPage'
+import { AdminArchivedMaterialsPage } from '../pages/AdminArchivedMaterialsPage'
+import { AdminInstrumentsPage } from '../pages/AdminInstrumentsPage'
 import { AdminPendingMaterialsPage } from '../pages/AdminPendingMaterialsPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
 import { LoginPage } from '../pages/LoginPage'
+import { MaterialPreviewPage } from '../pages/MaterialPreviewPage'
 import { MyUploadsPage } from '../pages/MyUploadsPage'
 import { TeacherLibraryPage } from '../pages/TeacherLibraryPage'
 import { UploadMaterialPage } from '../pages/UploadMaterialPage'
@@ -26,7 +29,23 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="materials/:id/preview"
+          element={
+            <ProtectedRoute allowedRoles={['Teacher', 'Admin']}>
+              <MaterialPreviewPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="upload-material"
+          element={
+            <ProtectedRoute allowedRoles={['Teacher', 'Admin']}>
+              <UploadMaterialPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="upload"
           element={
             <ProtectedRoute allowedRoles={['Teacher', 'Admin']}>
               <UploadMaterialPage />
@@ -58,10 +77,26 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="admin/archived-materials"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminArchivedMaterialsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="admin/users"
           element={
             <ProtectedRoute allowedRoles={['Admin']}>
               <AdminUsersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin/instruments"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminInstrumentsPage />
             </ProtectedRoute>
           }
         />

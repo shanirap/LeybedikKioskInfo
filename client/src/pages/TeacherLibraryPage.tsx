@@ -1,18 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
-import { downloadMaterial, getApprovedMaterials, likeMaterial, previewMaterial } from '../api/materialsApi'
+import { downloadMaterial, getApprovedMaterials, likeMaterial } from '../api/materialsApi'
+import { Button } from '../components/Button'
+import { IconButton } from '../components/IconButton'
+import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import type { MaterialDto } from '../types/material'
-import { formatDate } from '../utils/displayText'
+import { formatDate, formatMaterialLevel } from '../utils/displayText'
+import { useAuth } from '../utils/useAuth'
 
 type SortMode = 'newest' | 'popular' | 'liked' | 'title'
 
 export function TeacherLibraryPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [materials, setMaterials] = useState<MaterialDto[]>([])
   const [search, setSearch] = useState('')
   const [instrumentId, setInstrumentId] = useState('all')
   const [sortMode, setSortMode] = useState<SortMode>('newest')
   const [loading, setLoading] = useState(true)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const instruments = useMemo(() => {
     const unique = new Map<number, string>()
@@ -33,6 +43,7 @@ export function TeacherLibraryPage() {
           material.title,
           material.description ?? '',
           material.instrumentName,
+          formatMaterialLevel(material.level),
           material.uploadedByName,
           material.fileName,
         ]
@@ -58,11 +69,7 @@ export function TeacherLibraryPage() {
       })
   }, [instrumentId, materials, search, sortMode])
 
-  useEffect(() => {
-    loadMaterials()
-  }, [])
-
-  async function loadMaterials() {
+  const loadMaterials = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -72,24 +79,46 @@ export function TeacherLibraryPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadMaterials()
+  }, [loadMaterials])
 
   async function handleLike(material: MaterialDto) {
-    if (material.isLikedByCurrentUser) return
+    if (material.isLikedByCurrentUser || material.uploadedByEmail === user?.email || busyAction) return
 
-    const updated = await likeMaterial(material.id)
-    setMaterials((current) =>
-      current.map((item) => (item.id === updated.id ? updated : item)),
-    )
+    setBusyAction(`like-${material.id}`)
+    setActionError(null)
+    try {
+      const updated = await likeMaterial(material.id)
+      setMaterials((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+    } catch (err) {
+      setActionError(getApiErrorMessage(err, 'לא ניתן לסמן לייק.'))
+    } finally {
+      setBusyAction(null)
+    }
   }
 
   async function handleDownload(material: MaterialDto) {
-    await downloadMaterial(material.id, material.fileName)
-    await loadMaterials()
+    if (busyAction) return
+
+    setBusyAction(`download-${material.id}`)
+    setActionError(null)
+    try {
+      await downloadMaterial(material.id, material.fileName)
+      await loadMaterials()
+    } catch (err) {
+      setActionError(getApiErrorMessage(err, 'לא ניתן להוריד את הקובץ.'))
+    } finally {
+      setBusyAction(null)
+    }
   }
 
-  async function handlePreview(material: MaterialDto) {
-    await previewMaterial(material.id, material.fileName)
+  function handlePreview(material: MaterialDto) {
+    navigate(`/materials/${material.id}/preview`, { state: { from: location.pathname } })
   }
 
   return (
@@ -151,6 +180,7 @@ export function TeacherLibraryPage() {
 
       {loading && <p className="empty-state">טוען חומרים...</p>}
       {error && <p className="error-text">{error}</p>}
+      {actionError && <p className="error-text">{actionError}</p>}
       {!loading && !error && materials.length === 0 && (
         <p className="empty-state">עדיין אין חומרים מאושרים להצגה.</p>
       )}
@@ -160,44 +190,66 @@ export function TeacherLibraryPage() {
 
       <div className="card-grid">
         {visibleMaterials.map((material) => (
-          <article className="card library-card" key={material.id}>
-            <div className="card-header">
-              <div>
-                <span className="card-kicker">חומר לימוד</span>
-                <h2>{material.title}</h2>
+          <MaterialCard
+            key={material.id}
+            kicker="חומר לימוד"
+            title={material.title}
+            badges={[
+              { label: material.instrumentName, className: 'instrument-badge' },
+              { label: formatMaterialLevel(material.level) },
+            ]}
+            description={material.description ?? undefined}
+            metaItems={[
+              `מורה: ${material.uploadedByName}`,
+              `אושר: ${formatDate(material.approvedAtUtc ?? material.createdAtUtc)}`,
+              `קובץ: ${material.fileName}`,
+            ]}
+            stats={
+              <div className="material-stats">
+                <span>{material.downloadCount} הורדות</span>
+                <span>{material.likeCount} לייקים</span>
               </div>
-              <span className="badge instrument-badge">{material.instrumentName}</span>
-            </div>
-            {material.description && <p className="card-description">{material.description}</p>}
-
-            <div className="material-meta">
-              <span>מורה: {material.uploadedByName}</span>
-              <span>אושר: {formatDate(material.approvedAtUtc ?? material.createdAtUtc)}</span>
-              <span>קובץ: {material.fileName}</span>
-            </div>
-
-            <div className="material-stats">
-              <span>{material.downloadCount} הורדות</span>
-              <span>{material.likeCount} לייקים</span>
-            </div>
-
-            <div className="button-row library-actions">
-              <button className="secondary-button preview-button" onClick={() => handlePreview(material)}>
-                צפייה בקובץ
-              </button>
-              <button onClick={() => handleDownload(material)}>הורדה</button>
-              <button
-                className="like-button"
-                disabled={material.isLikedByCurrentUser}
-                aria-label={material.isLikedByCurrentUser ? 'כבר סימנת לייק' : 'סמן לייק'}
-                onClick={() => handleLike(material)}
-              >
-                <span aria-hidden="true">
-                  {material.isLikedByCurrentUser ? '♥' : '👍'}
-                </span>
-              </button>
-            </div>
-          </article>
+            }
+            footer={
+              <MaterialCardFooter
+                primary={
+                  <Button variant="preview" onClick={() => handlePreview(material)}>
+                    צפייה בקובץ
+                  </Button>
+                }
+                tools={
+                  <>
+                    <IconButton
+                      label={busyAction === `download-${material.id}` ? 'מוריד...' : 'הורדה'}
+                      variant="ghost"
+                      disabled={busyAction === `download-${material.id}`}
+                      onClick={() => void handleDownload(material)}
+                    >
+                      <span aria-hidden="true">↓</span>
+                    </IconButton>
+                    <IconButton
+                      variant="like"
+                      label={
+                        material.uploadedByEmail === user?.email
+                          ? 'לא ניתן לסמן לייק לחומר שלך'
+                          : material.isLikedByCurrentUser
+                            ? 'כבר סימנת לייק'
+                            : 'סמן לייק'
+                      }
+                      disabled={
+                        material.isLikedByCurrentUser ||
+                        material.uploadedByEmail === user?.email ||
+                        busyAction === `like-${material.id}`
+                      }
+                      onClick={() => void handleLike(material)}
+                    >
+                      <span aria-hidden="true">{material.isLikedByCurrentUser ? '♥' : '👍'}</span>
+                    </IconButton>
+                  </>
+                }
+              />
+            }
+          />
         ))}
       </div>
     </section>

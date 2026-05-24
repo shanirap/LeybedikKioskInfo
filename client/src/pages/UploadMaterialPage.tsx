@@ -9,6 +9,7 @@ export function UploadMaterialPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [instrumentId, setInstrumentId] = useState('')
+  const [level, setLevel] = useState<'Beginner' | 'Advanced'>('Beginner')
   const [file, setFile] = useState<File | null>(null)
   const [fileInputKey, setFileInputKey] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -31,7 +32,18 @@ export function UploadMaterialPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!file || !instrumentId) return
+    if (!instrumentId) {
+      setError('אין כלי נגינה זמינים להעלאה. יש לפנות למנהל לשיוך כלי.')
+      return
+    }
+    if (!title.trim()) {
+      setError('יש להזין כותרת לחומר.')
+      return
+    }
+    if (!file) {
+      setError('יש לבחור קובץ להעלאה.')
+      return
+    }
 
     setLoading(true)
     setError(null)
@@ -39,14 +51,16 @@ export function UploadMaterialPage() {
 
     try {
       const formData = new FormData()
-      formData.append('title', title)
-      formData.append('description', description)
+      formData.append('title', title.trim())
+      formData.append('description', description.trim())
       formData.append('instrumentId', instrumentId)
+      formData.append('level', level)
       formData.append('file', file)
 
       await uploadMaterial(formData)
       setTitle('')
       setDescription('')
+      setLevel('Beginner')
       setFile(null)
       setFileInputKey((current) => current + 1)
       setMessage('החומר הועלה וממתין לאישור מנהל.')
@@ -65,6 +79,9 @@ export function UploadMaterialPage() {
         <p className="page-description">
           העלה קובץ מסודר לבדיקה ואישור. לאחר האישור הוא יופיע בספרייה למורים המתאימים.
         </p>
+        <p className="page-description">
+          סוגי קבצים מותרים: PDF, Word, PowerPoint ותמונות. הגודל המרבי הוא 50MB.
+        </p>
       </div>
 
       {message && <p className="success-text">{message}</p>}
@@ -72,6 +89,9 @@ export function UploadMaterialPage() {
 
       <div className="upload-layout">
         <form className="form-panel upload-form" onSubmit={handleSubmit}>
+          {instruments.length === 0 && (
+            <p className="empty-state">אין לך כרגע כלי נגינה זמינים להעלאה.</p>
+          )}
           <label>
             <span>כותרת</span>
             <input
@@ -99,12 +119,21 @@ export function UploadMaterialPage() {
               value={instrumentId}
               onChange={(e) => setInstrumentId(e.target.value)}
               required
+              disabled={instruments.length === 0}
             >
               {instruments.map((instrument) => (
                 <option value={instrument.id} key={instrument.id}>
                   {instrument.name}
                 </option>
               ))}
+            </select>
+          </label>
+
+          <label>
+            <span>רמת החומר</span>
+            <select value={level} onChange={(e) => setLevel(e.target.value as 'Beginner' | 'Advanced')}>
+              <option value="Beginner">מתחילים</option>
+              <option value="Advanced">מתקדמים</option>
             </select>
           </label>
 
@@ -121,7 +150,11 @@ export function UploadMaterialPage() {
             <small>PDF, Word, PowerPoint או תמונה עד 50MB</small>
           </label>
 
-          <button className="submit-button" type="submit" disabled={loading || !file}>
+          <button
+            className="submit-button"
+            type="submit"
+            disabled={loading || !file || instruments.length === 0}
+          >
             {loading ? 'מעלה...' : 'העלה לבדיקה'}
           </button>
         </form>

@@ -30,6 +30,12 @@ public class UserService
 
     public async Task<UserCreateResult> CreateAsync(CreateUserRequest request, int actorUserId)
     {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            return UserCreateResult.BadRequest("User full name is required.");
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return UserCreateResult.BadRequest("User email is required.");
+
         var email = NormalizeEmail(request.Email);
         if (await _db.Users.AnyAsync(u => u.Email == email))
             return UserCreateResult.Conflict();
@@ -69,9 +75,28 @@ public class UserService
         if (user is null)
             return UserUpdateResult.NotFound();
 
+        if (string.IsNullOrWhiteSpace(request.FullName))
+            return UserUpdateResult.BadRequest("User full name is required.");
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return UserUpdateResult.BadRequest("User email is required.");
+
         var email = NormalizeEmail(request.Email);
         if (await _db.Users.AnyAsync(u => u.Id != id && u.Email == email))
             return UserUpdateResult.Conflict();
+
+        var wasActive = user.IsActive;
+        var removesActiveAdmin = user.Role == UserRole.Admin &&
+                                 user.IsActive &&
+                                 (request.Role != UserRole.Admin || !request.IsActive);
+        if (id == actorUserId && !request.IsActive)
+            return UserUpdateResult.BadRequest("Cannot deactivate your own account.");
+
+        if (id == actorUserId && user.Role == UserRole.Admin && request.Role != UserRole.Admin)
+            return UserUpdateResult.BadRequest("Cannot change your own admin role.");
+
+        if (removesActiveAdmin && await CountActiveAdminsAsync(excludingUserId: id) == 0)
+            return UserUpdateResult.BadRequest("At least one active admin is required.");
 
         user.FullName = request.FullName.Trim();
         user.Email = email;
@@ -88,6 +113,16 @@ public class UserService
             "User",
             user.Id,
             $"Updated user {user.Email}.");
+
+        if (wasActive != user.IsActive)
+        {
+            await _auditLogService.AddAsync(
+                actorUserId,
+                user.IsActive ? "ReactivateUser" : "DeactivateUser",
+                "User",
+                user.Id,
+                $"{(user.IsActive ? "Reactivated" : "Deactivated")} user {user.Email}.");
+        }
 
         return UserUpdateResult.Success(await GetUserDto(id));
     }
@@ -126,6 +161,12 @@ public class UserService
 
         user.PasswordHash = PasswordHasher.HashPassword(request.NewPassword);
         await _db.SaveChangesAsync();
+        await _auditLogService.AddAsync(
+            userId,
+            "ChangePassword",
+            "User",
+            user.Id,
+            $"Changed password for user {user.Email}.");
 
         return PasswordChangeResult.Success();
     }
@@ -174,6 +215,14 @@ public class UserService
         await _db.SaveChangesAsync();
     }
 
+    private async Task<int> CountActiveAdminsAsync(int excludingUserId)
+    {
+        return await _db.Users.CountAsync(u =>
+            u.Id != excludingUserId &&
+            u.Role == UserRole.Admin &&
+            u.IsActive);
+    }
+
     private async Task<AdminUserDto> GetUserDto(int id)
     {
         return await _db.Users
@@ -205,20 +254,24 @@ public class UserService
     }
 }
 
-public record UserCreateResult(UserCreateStatus Status, AdminUserDto? User = null)
+public record UserCreateResult(UserCreateStatus Status, AdminUserDto? User = null, string? ErrorMessage = null)
 {
     public static UserCreateResult Success(AdminUserDto user) => new(UserCreateStatus.Success, user);
 
     public static UserCreateResult Conflict() => new(UserCreateStatus.Conflict);
+
+    public static UserCreateResult BadRequest(string errorMessage)
+        => new(UserCreateStatus.BadRequest, ErrorMessage: errorMessage);
 }
 
 public enum UserCreateStatus
 {
     Success,
     Conflict,
+    BadRequest,
 }
 
-public record UserUpdateResult(UserUpdateStatus Status, AdminUserDto? User = null)
+public record UserUpdateResult(UserUpdateStatus Status, AdminUserDto? User = null, string? ErrorMessage = null)
 {
     public static UserUpdateResult Success(AdminUserDto user) => new(UserUpdateStatus.Success, user);
 
@@ -226,7 +279,8 @@ public record UserUpdateResult(UserUpdateStatus Status, AdminUserDto? User = nul
 
     public static UserUpdateResult Conflict() => new(UserUpdateStatus.Conflict);
 
-    public static UserUpdateResult BadRequest() => new(UserUpdateStatus.BadRequest);
+    public static UserUpdateResult BadRequest(string? errorMessage = null)
+        => new(UserUpdateStatus.BadRequest, ErrorMessage: errorMessage);
 }
 
 public enum UserUpdateStatus

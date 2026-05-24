@@ -47,6 +47,9 @@ public class InstrumentService
 
     public async Task<InstrumentDto?> CreateAsync(CreateInstrumentRequest request, int actorUserId)
     {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return null;
+
         var name = request.Name.Trim();
         if (await _db.Instruments.AnyAsync(i => i.Name == name))
             return null;
@@ -78,10 +81,14 @@ public class InstrumentService
         if (instrument is null)
             return InstrumentUpdateResult.NotFound();
 
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return InstrumentUpdateResult.BadRequest("Instrument name is required.");
+
         var name = request.Name.Trim();
         if (await _db.Instruments.AnyAsync(i => i.Id != id && i.Name == name))
             return InstrumentUpdateResult.Conflict();
 
+        var wasActive = instrument.IsActive;
         instrument.Name = name;
         instrument.IsActive = request.IsActive;
 
@@ -93,6 +100,16 @@ public class InstrumentService
             instrument.Id,
             $"Updated instrument {instrument.Name}.");
 
+        if (wasActive != instrument.IsActive)
+        {
+            await _auditLogService.AddAsync(
+                actorUserId,
+                instrument.IsActive ? "ActivateInstrument" : "DeactivateInstrument",
+                "Instrument",
+                instrument.Id,
+                $"{(instrument.IsActive ? "Activated" : "Deactivated")} instrument {instrument.Name}.");
+        }
+
         return InstrumentUpdateResult.Success(ToDto(instrument));
     }
 
@@ -102,7 +119,7 @@ public class InstrumentService
     }
 }
 
-public record InstrumentUpdateResult(InstrumentUpdateStatus Status, InstrumentDto? Instrument = null)
+public record InstrumentUpdateResult(InstrumentUpdateStatus Status, InstrumentDto? Instrument = null, string? ErrorMessage = null)
 {
     public static InstrumentUpdateResult Success(InstrumentDto instrument)
         => new(InstrumentUpdateStatus.Success, instrument);
@@ -112,6 +129,9 @@ public record InstrumentUpdateResult(InstrumentUpdateStatus Status, InstrumentDt
 
     public static InstrumentUpdateResult Conflict()
         => new(InstrumentUpdateStatus.Conflict);
+
+    public static InstrumentUpdateResult BadRequest(string errorMessage)
+        => new(InstrumentUpdateStatus.BadRequest, ErrorMessage: errorMessage);
 }
 
 public enum InstrumentUpdateStatus
@@ -119,4 +139,5 @@ public enum InstrumentUpdateStatus
     Success,
     NotFound,
     Conflict,
+    BadRequest,
 }

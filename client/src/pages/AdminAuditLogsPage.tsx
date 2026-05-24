@@ -1,72 +1,70 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getApiErrorMessage } from '../api/apiClient'
-import { getAuditLogs } from '../api/auditApi'
+import { getAuditLogsPaged } from '../api/auditApi'
+import { Pager } from '../components/Pager'
 import type { AuditLogDto } from '../types/material'
 import { formatAuditAction, formatDateTime, formatEntityType } from '../utils/displayText'
 
+const PAGE_SIZE = 50
+
 export function AdminAuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogDto[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const visibleLogs = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return logs
-
-    return logs.filter((log) =>
-      [
-        log.actorName,
-        log.action,
-        log.entityType,
-        log.entityId?.toString() ?? '',
-        log.details ?? '',
-      ]
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    )
-  }, [logs, search])
-
   useEffect(() => {
-    async function loadLogs() {
-      setLoading(true)
-      setError(null)
-      try {
-        setLogs(await getAuditLogs())
-      } catch (err) {
-        setError(getApiErrorMessage(err, 'לא ניתן לטעון את יומן הפעילות.'))
-      } finally {
-        setLoading(false)
-      }
-    }
-
     loadLogs()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search])
+
+  async function loadLogs() {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await getAuditLogsPaged({ search: search || undefined, page, pageSize: PAGE_SIZE })
+      setLogs(result.items)
+      setTotalCount(result.totalCount)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'לא ניתן לטעון את יומן הפעילות.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setPage(1)
+    setSearch(searchInput)
+  }
 
   return (
     <section>
       <h1>יומן פעילות</h1>
       <p className="page-description">פעולות ניהול אחרונות במשתמשים, כלים וחומרים.</p>
 
-      <div className="toolbar">
+      <form className="toolbar" onSubmit={handleSearch}>
         <label>
           חיפוש
           <input
             placeholder="חיפוש פעולות, משתמשים וישויות..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </label>
-      </div>
+        <button type="submit" className="secondary-button">חפש</button>
+      </form>
 
       {loading && <p className="empty-state">טוען יומן פעילות...</p>}
       {error && <p className="error-text">{error}</p>}
-      {!loading && !error && visibleLogs.length === 0 && (
-        <p className="empty-state">עדיין לא נרשמו פעולות ביומן.</p>
+      {!loading && !error && totalCount === 0 && (
+        <p className="empty-state">{search ? 'לא נמצאו רשומות התואמות את החיפוש.' : 'עדיין לא נרשמו פעולות ביומן.'}</p>
       )}
 
-      {!loading && !error && visibleLogs.length > 0 && (
+      {!loading && !error && logs.length > 0 && (
         <div className="table-wrapper">
           <table>
             <thead>
@@ -79,7 +77,7 @@ export function AdminAuditLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleLogs.map((log) => (
+              {logs.map((log) => (
                 <tr key={log.id}>
                   <td>{formatDateTime(log.createdAtUtc)}</td>
                   <td>{log.actorName}</td>
@@ -95,6 +93,7 @@ export function AdminAuditLogsPage() {
           </table>
         </div>
       )}
+      <Pager page={page} pageSize={PAGE_SIZE} totalCount={totalCount} onPageChange={setPage} />
     </section>
   )
 }

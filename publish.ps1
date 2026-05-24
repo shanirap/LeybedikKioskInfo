@@ -27,6 +27,9 @@ try {
     Invoke-NativeCommand { npm install }
 
     Write-Host "Building frontend..."
+    if (Test-Path $clientDistPath) {
+        Remove-Item $clientDistPath -Recurse -Force
+    }
     Invoke-NativeCommand { npm run build }
     Pop-Location
 
@@ -38,6 +41,12 @@ try {
     Copy-Item (Join-Path $clientDistPath "*") $wwwrootPath -Recurse -Force
 
     Write-Host "Publishing backend..."
+    $runningPublishedServers = Get-Process server -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($publishPath, [StringComparison]::OrdinalIgnoreCase) }
+    if ($runningPublishedServers) {
+        throw "A published server is running from $publishPath. Stop it with Ctrl+C before publishing again."
+    }
+
     if (Test-Path $publishPath) {
         Remove-Item $publishPath -Recurse -Force
     }

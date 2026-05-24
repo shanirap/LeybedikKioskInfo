@@ -13,9 +13,11 @@ namespace LeybedikInfoKiosk.Server.Tests;
 public class TestApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"LeybedikTests-{Guid.NewGuid():N}";
+    private readonly string? _storageRootPath;
 
-    public TestApplicationFactory()
+    public TestApplicationFactory(string? storageRootPath = null)
     {
+        _storageRootPath = storageRootPath;
         Environment.SetEnvironmentVariable("Jwt__Secret", "test-secret-key-for-api-tests-32chars");
         Environment.SetEnvironmentVariable("Jwt__Issuer", "LeybedikInfoKiosk");
         Environment.SetEnvironmentVariable("Jwt__Audience", "LeybedikInfoKioskClient");
@@ -34,7 +36,7 @@ public class TestApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Audience"] = "LeybedikInfoKioskClient",
                 ["Jwt:ExpiryMinutes"] = "120",
                 ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
-                ["Storage:RootPath"] = "Storage",
+                ["Storage:RootPath"] = _storageRootPath ?? "Storage",
             });
         });
 
@@ -105,6 +107,7 @@ public class TestApplicationFactory : WebApplicationFactory<Program>
                 Title = "Assigned Approved",
                 InstrumentId = piano.Id,
                 UploadedByUserId = teacher.Id,
+                Level = MaterialLevel.Beginner,
                 Status = MaterialStatus.Approved,
                 OriginalFilePath = "Storage/demo/assigned.pdf",
                 OriginalFileName = "assigned.pdf",
@@ -120,6 +123,7 @@ public class TestApplicationFactory : WebApplicationFactory<Program>
                 Title = "Unassigned Approved",
                 InstrumentId = violin.Id,
                 UploadedByUserId = teacher.Id,
+                Level = MaterialLevel.Advanced,
                 Status = MaterialStatus.Approved,
                 OriginalFilePath = "Storage/demo/unassigned.pdf",
                 OriginalFileName = "unassigned.pdf",
@@ -135,6 +139,7 @@ public class TestApplicationFactory : WebApplicationFactory<Program>
                 Title = "Assigned Pending",
                 InstrumentId = piano.Id,
                 UploadedByUserId = teacher.Id,
+                Level = MaterialLevel.Beginner,
                 Status = MaterialStatus.Pending,
                 OriginalFilePath = "Storage/demo/pending.pdf",
                 OriginalFileName = "pending.pdf",

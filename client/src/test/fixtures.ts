@@ -1,5 +1,5 @@
 import type { AuthUser } from '../types/auth'
-import type { AdminUserDto, AuditLogDto, InstrumentDto, MaterialDto } from '../types/material'
+import type { AdminUserDto, AuditLogDto, InstrumentDto, MaterialDto, PagedResult } from '../types/material'
 
 export const teacherUser: AuthUser = {
   fullName: 'Teacher',
@@ -30,6 +30,8 @@ export const materials: MaterialDto[] = [
     instrumentId: 1,
     instrumentName: 'Piano',
     uploadedByName: 'Teacher',
+    uploadedByEmail: 'teacher@test.local',
+    level: 'Beginner',
     fileName: 'rhythm.pdf',
     status: 'Approved',
     downloadCount: 2,
@@ -37,6 +39,10 @@ export const materials: MaterialDto[] = [
     isLikedByCurrentUser: false,
     createdAtUtc: '2026-01-01T12:00:00Z',
     approvedAtUtc: '2026-01-02T12:00:00Z',
+    rejectedAtUtc: null,
+    rejectionReason: null,
+    fileSizeBytes: 12345,
+    fileHashSha256: 'abc123',
   },
   {
     id: 2,
@@ -45,6 +51,8 @@ export const materials: MaterialDto[] = [
     instrumentId: 2,
     instrumentName: 'Violin',
     uploadedByName: 'Other Teacher',
+    uploadedByEmail: 'other.teacher@test.local',
+    level: 'Advanced',
     fileName: 'strings.pdf',
     status: 'Pending',
     downloadCount: 0,
@@ -52,8 +60,16 @@ export const materials: MaterialDto[] = [
     isLikedByCurrentUser: true,
     createdAtUtc: '2026-01-03T12:00:00Z',
     approvedAtUtc: null,
+    rejectedAtUtc: '2026-01-04T12:00:00Z',
+    rejectionReason: 'Needs clearer notation',
+    fileSizeBytes: null,
+    fileHashSha256: null,
   },
 ]
+
+export function pagedMaterials(items: MaterialDto[] = materials): PagedResult<MaterialDto> {
+  return { items, totalCount: items.length, page: 1, pageSize: 20 }
+}
 
 export const adminUsers: AdminUserDto[] = [
   {

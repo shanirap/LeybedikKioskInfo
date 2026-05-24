@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using LeybedikInfoKiosk.Server.Models;
 
 namespace LeybedikInfoKiosk.Server.DTOs;
 
@@ -12,6 +13,9 @@ public class UploadMaterialRequest
 
     [Required]
     public int InstrumentId { get; set; }
+
+    [Required]
+    public MaterialLevel Level { get; set; } = MaterialLevel.Beginner;
 
     [Required]
     public IFormFile File { get; set; } = null!;
