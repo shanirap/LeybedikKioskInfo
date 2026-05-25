@@ -23,9 +23,9 @@ export function LoginPage() {
       const authUser = await loginApi({ email, password })
       login(authUser)
       if (authUser.role === 'Admin') {
-        navigate('/admin/pending-materials', { replace: true })
+        navigate('/admin/dashboard', { replace: true })
       } else {
-        navigate('/teacher-library', { replace: true })
+        navigate('/teacher/dashboard', { replace: true })
       }
     } catch (err) {
       setError(getApiErrorMessage(err, 'כתובת המייל או הסיסמה אינם נכונים.'))

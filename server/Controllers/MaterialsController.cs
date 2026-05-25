@@ -40,6 +40,13 @@ public class MaterialsController : ControllerBase
         return Ok(await _materialService.GetTeacherWalletAsync(User));
     }
 
+    [HttpGet("favorites")]
+    [Authorize(Roles = "Teacher,Admin")]
+    public async Task<ActionResult<IReadOnlyCollection<MaterialDto>>> GetFavorites()
+    {
+        return Ok(await _materialService.GetFavoritesAsync(User));
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<MaterialDto>> GetPreviewDetails(int id)
     {
@@ -94,6 +101,32 @@ public class MaterialsController : ControllerBase
         {
             MaterialLikeStatus.Success => Ok(result.Material),
             MaterialLikeStatus.NotFound => NotFound(),
+            _ => BadRequest(new { message = result.ErrorMessage ?? "Invalid request." }),
+        };
+    }
+
+    [HttpPost("{id:int}/favorite")]
+    [Authorize(Roles = "Teacher,Admin")]
+    public async Task<ActionResult<MaterialDto>> AddFavorite(int id)
+    {
+        var result = await _materialService.AddFavoriteAsync(id, User);
+        return result.Status switch
+        {
+            MaterialFavoriteStatus.Success => Ok(result.Material),
+            MaterialFavoriteStatus.NotFound => NotFound(),
+            _ => BadRequest(new { message = result.ErrorMessage ?? "Invalid request." }),
+        };
+    }
+
+    [HttpDelete("{id:int}/favorite")]
+    [Authorize(Roles = "Teacher,Admin")]
+    public async Task<ActionResult<MaterialDto>> RemoveFavorite(int id)
+    {
+        var result = await _materialService.RemoveFavoriteAsync(id, User);
+        return result.Status switch
+        {
+            MaterialFavoriteStatus.Success => Ok(result.Material),
+            MaterialFavoriteStatus.NotFound => NotFound(),
             _ => BadRequest(new { message = result.ErrorMessage ?? "Invalid request." }),
         };
     }

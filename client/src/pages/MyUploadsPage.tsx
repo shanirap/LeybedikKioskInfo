@@ -10,12 +10,14 @@ import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import { Pager } from '../components/Pager'
 import type { InstrumentDto, MaterialDto } from '../types/material'
 import { formatDateTime, formatMaterialLevel, formatStatus } from '../utils/displayText'
+import { useToast } from '../utils/useToast'
 
 const PAGE_SIZE = 20
 
 export function MyUploadsPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { showSuccess, showError } = useToast()
   const [materials, setMaterials] = useState<MaterialDto[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
@@ -29,8 +31,7 @@ export function MyUploadsPage() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [materialToArchive, setMaterialToArchive] = useState<MaterialDto | null>(null)
 
   useEffect(() => {
@@ -43,13 +44,15 @@ export function MyUploadsPage() {
 
   async function loadMaterials() {
     setLoading(true)
-    setError(null)
+    setLoadError(null)
     try {
       const result = await getMyUploadedMaterials({ search: search || undefined, page, pageSize: PAGE_SIZE })
       setMaterials(result.items)
       setTotalCount(result.totalCount)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לטעון את החומרים שהעלית.'))
+      const message = getApiErrorMessage(err, 'לא ניתן לטעון את החומרים שהעלית.')
+      setLoadError(message)
+      showError(message)
     } finally {
       setLoading(false)
     }
@@ -72,15 +75,13 @@ export function MyUploadsPage() {
   async function confirmArchive() {
     if (!materialToArchive) return
 
-    setError(null)
-    setMessage(null)
     try {
       await deleteMyUploadedMaterial(materialToArchive.id)
-      setMessage('החומר הועבר לארכיון.')
+      showSuccess('החומר הועבר לארכיון.')
       setMaterialToArchive(null)
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לארכב את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן לארכב את החומר.'))
       setMaterialToArchive(null)
     }
   }
@@ -92,20 +93,16 @@ export function MyUploadsPage() {
     setEditInstrumentId(String(material.instrumentId))
     setEditLevel(material.level)
     setEditFile(null)
-    setMessage(null)
-    setError(null)
   }
 
   async function handleSaveEdit(e: FormEvent) {
     e.preventDefault()
     if (!editingMaterial) return
     if (!editTitle.trim()) {
-      setError('יש להזין כותרת לחומר.')
+      showError('יש להזין כותרת לחומר.')
       return
     }
 
-    setError(null)
-    setMessage(null)
     try {
       const formData = new FormData()
       formData.append('title', editTitle.trim())
@@ -117,10 +114,10 @@ export function MyUploadsPage() {
       await updateMyUploadedMaterial(editingMaterial.id, formData)
       setEditingMaterial(null)
       setEditFile(null)
-      setMessage('החומר עודכן ונשלח מחדש לבדיקה.')
+      showSuccess('החומר עודכן ונשלח מחדש לבדיקה.')
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לעדכן את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן לעדכן את החומר.'))
     }
   }
 
@@ -157,8 +154,6 @@ export function MyUploadsPage() {
       </form>
 
       {loading && <p className="empty-state">טוען את החומרים שהעלית...</p>}
-      {message && <p className="success-text">{message}</p>}
-      {error && <p className="error-text">{error}</p>}
       {editingMaterial && (
         <form className="form-panel upload-form" onSubmit={handleSaveEdit}>
           <h2>עריכת חומר</h2>
@@ -201,7 +196,7 @@ export function MyUploadsPage() {
           </div>
         </form>
       )}
-      {!loading && !error && totalCount === 0 && (
+      {!loading && !loadError && totalCount === 0 && (
         <p className="empty-state">
           {search ? 'לא נמצאו חומרים התואמים את החיפוש.' : 'עדיין לא העלית חומרים למערכת.'}
         </p>

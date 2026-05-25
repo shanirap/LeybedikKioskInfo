@@ -1,10 +1,13 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using LeybedikInfoKiosk.Server.Data;
+using LeybedikInfoKiosk.Server.Hubs;
 using LeybedikInfoKiosk.Server.Middleware;
+using LeybedikInfoKiosk.Server.Security;
 using LeybedikInfoKiosk.Server.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -31,6 +34,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    path.StartsWithSegments("/hubs", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            },
         };
     });
 
@@ -66,9 +84,12 @@ builder.Services.AddScoped<IFileStorageService>(sp =>
         : ActivatorUtilities.CreateInstance<LocalFileStorageService>(sp);
 });
 builder.Services.AddScoped<MaterialService>();
+builder.Services.AddScoped<LikeNotificationService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<DevelopmentDataSeeder>();
 builder.Services.AddScoped<BootstrapAdminService>();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IUserIdProvider, SignalRUserIdProvider>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -90,7 +111,8 @@ builder.Services.AddCors(options =>
                            uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
                 })
                 .AllowAnyHeader()
-                .AllowAnyMethod();
+                .AllowAnyMethod()
+                .AllowCredentials();
             return;
         }
 
@@ -155,9 +177,11 @@ app.UseAuthentication();
 app.UseMiddleware<ActiveUserMiddleware>();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<LikeNotificationHub>("/hubs/likes");
 app.MapFallback(async context =>
 {
-    if (context.Request.Path.StartsWithSegments("/api"))
+    if (context.Request.Path.StartsWithSegments("/api") ||
+        context.Request.Path.StartsWithSegments("/hubs"))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;

@@ -12,20 +12,21 @@ import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import { Pager } from '../components/Pager'
 import type { MaterialDto } from '../types/material'
 import { formatDateTime, formatMaterialLevel, formatStatus } from '../utils/displayText'
+import { useToast } from '../utils/useToast'
 
 const PAGE_SIZE = 20
 
 export function AdminArchivedMaterialsPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { showSuccess, showError } = useToast()
   const [materials, setMaterials] = useState<MaterialDto[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [materialToDeletePermanently, setMaterialToDeletePermanently] = useState<MaterialDto | null>(null)
 
   useEffect(() => {
@@ -35,43 +36,41 @@ export function AdminArchivedMaterialsPage() {
 
   async function loadMaterials() {
     setLoading(true)
-    setError(null)
+    setLoadError(null)
     try {
       const result = await getArchivedMaterials({ search: search || undefined, page, pageSize: PAGE_SIZE })
       setMaterials(result.items)
       setTotalCount(result.totalCount)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לטעון את ארכיון החומרים.'))
+      const message = getApiErrorMessage(err, 'לא ניתן לטעון את ארכיון החומרים.')
+      setLoadError(message)
+      showError(message)
     } finally {
       setLoading(false)
     }
   }
 
   async function handleRestore(material: MaterialDto) {
-    setError(null)
-    setMessage(null)
     try {
       await restoreMaterial(material.id)
-      setMessage('החומר שוחזר.')
+      showSuccess('החומר שוחזר.')
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לשחזר את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן לשחזר את החומר.'))
     }
   }
 
   async function confirmPermanentDelete() {
     if (!materialToDeletePermanently) return
 
-    setError(null)
-    setMessage(null)
     try {
       await deleteArchivedMaterialPermanently(materialToDeletePermanently.id)
       setMaterialToDeletePermanently(null)
-      setMessage('החומר נמחק לצמיתות.')
+      showSuccess('החומר נמחק לצמיתות.')
       await loadMaterials()
     } catch (err) {
       setMaterialToDeletePermanently(null)
-      setError(getApiErrorMessage(err, 'לא ניתן למחוק את החומר לצמיתות.'))
+      showError(getApiErrorMessage(err, 'לא ניתן למחוק את החומר לצמיתות.'))
     }
   }
 
@@ -118,9 +117,7 @@ export function AdminArchivedMaterialsPage() {
       </form>
 
       {loading && <p className="empty-state">טוען ארכיון...</p>}
-      {message && <p className="success-text">{message}</p>}
-      {error && <p className="error-text">{error}</p>}
-      {!loading && !error && totalCount === 0 && (
+      {!loading && !loadError && totalCount === 0 && (
         <p className="empty-state">
           {search ? 'לא נמצאו חומרים התואמים את החיפוש.' : 'אין כרגע חומרים בארכיון.'}
         </p>

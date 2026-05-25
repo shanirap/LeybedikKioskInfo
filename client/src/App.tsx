@@ -16,7 +16,7 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header-top">
-          <Link className="brand-link" to={user ? '/teacher-library' : '/login'}>
+          <Link className="brand-link" to={user ? (user.role === 'Admin' ? '/admin/dashboard' : '/teacher/dashboard') : '/login'}>
             <img className="brand-logo" src={INSTITUTION_LOGO_SRC} alt="לוגו לייבעדיק" />
             <span className="brand-text">
               <strong>{APP_TITLE}</strong>
@@ -36,15 +36,18 @@ export default function App() {
             <div className="app-nav-links">
               {(user.role === 'Teacher' || user.role === 'Admin') && (
                 <>
+                  {user.role === 'Teacher' && <Link to="/teacher/dashboard">לוח בקרה</Link>}
                   <Link to="/teacher-library">ספרייה</Link>
                   <Link to="/upload-material">העלאת חומר</Link>
                   <Link to="/my-uploads">החומרים שלי</Link>
+                  <Link to="/my-favorites">המועדפים שלי</Link>
                   <Link to="/teacher/wallet">הארנק שלי</Link>
                   <Link to="/account">החשבון שלי</Link>
                 </>
               )}
               {user.role === 'Admin' && (
                 <>
+                  <Link to="/admin/dashboard">לוח ניהול</Link>
                   <Link to="/admin/users">משתמשים</Link>
                   <Link to="/admin/instruments">כלי נגינה</Link>
                   <Link to="/admin/pending-materials">ניהול חומרים</Link>

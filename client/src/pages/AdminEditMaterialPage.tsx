@@ -9,6 +9,7 @@ import {
 } from '../api/materialsApi'
 import type { InstrumentDto, MaterialDto } from '../types/material'
 import { formatStatus } from '../utils/displayText'
+import { useToast } from '../utils/useToast'
 
 function getEditHeading(status: MaterialDto['status']) {
   if (status === 'Approved') return 'עריכת חומר מאושר'
@@ -19,6 +20,7 @@ function getEditHeading(status: MaterialDto['status']) {
 export function AdminEditMaterialPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { showSuccess, showError } = useToast()
   const materialId = Number(id)
   const isValidId = Number.isFinite(materialId)
 
@@ -31,14 +33,14 @@ export function AdminEditMaterialPage() {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isValidId) return
 
     async function loadPage() {
       setLoading(true)
-      setError(null)
+      setLoadError(null)
       try {
         const [loadedMaterial, loadedInstruments] = await Promise.all([
           getMaterialPreviewDetails(materialId),
@@ -51,25 +53,27 @@ export function AdminEditMaterialPage() {
         setInstrumentId(String(loadedMaterial.instrumentId))
         setLevel(loadedMaterial.level)
       } catch (err) {
-        setError(getApiErrorMessage(err, 'לא ניתן לטעון את החומר לעריכה.'))
+        const message = getApiErrorMessage(err, 'לא ניתן לטעון את החומר לעריכה.')
+        setLoadError(message)
+        showError(message)
       } finally {
         setLoading(false)
       }
     }
 
     void loadPage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isValidId, materialId])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!material) return
     if (!title.trim()) {
-      setError('יש להזין כותרת לחומר.')
+      showError('יש להזין כותרת לחומר.')
       return
     }
 
     setSaving(true)
-    setError(null)
     try {
       const formData = new FormData()
       formData.append('title', title.trim())
@@ -79,11 +83,10 @@ export function AdminEditMaterialPage() {
       if (file) formData.append('file', file)
 
       await updateAdminMaterial(material.id, formData)
-      navigate('/admin/pending-materials', {
-        state: { message: 'החומר עודכן בהצלחה.' },
-      })
+      showSuccess('החומר עודכן בהצלחה.')
+      navigate('/admin/pending-materials')
     } catch (err) {
-      setError(getApiErrorMessage(err, 'אירעה שגיאה בשמירה.'))
+      showError(getApiErrorMessage(err, 'אירעה שגיאה בשמירה.'))
     } finally {
       setSaving(false)
     }
@@ -91,11 +94,10 @@ export function AdminEditMaterialPage() {
 
   async function handleDownloadCurrentFile() {
     if (!material) return
-    setError(null)
     try {
       await downloadMaterialForReview(material.id, material.fileName)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן להוריד את הקובץ.'))
+      showError(getApiErrorMessage(err, 'לא ניתן להוריד את הקובץ.'))
     }
   }
 
@@ -121,7 +123,7 @@ export function AdminEditMaterialPage() {
   if (!material) {
     return (
       <section className="upload-page">
-        <p className="error-text">{error ?? 'החומר לא נמצא.'}</p>
+        <p className="error-text">{loadError ?? 'החומר לא נמצא.'}</p>
         <Link to="/admin/pending-materials" className="secondary-button">
           חזרה לניהול חומרים
         </Link>
@@ -138,8 +140,6 @@ export function AdminEditMaterialPage() {
           סטטוס נוכחי: {formatStatus(material.status)} · קובץ נוכחי: {material.fileName}
         </p>
       </div>
-
-      {error && <p className="error-text">{error}</p>}
 
       <div className="upload-layout">
         <form className="form-panel upload-form" onSubmit={handleSubmit}>

@@ -1,6 +1,7 @@
 import axios, { type AxiosResponse } from 'axios'
 import type { MaterialDto, PagedResult, TeacherWalletDto } from '../types/material'
 import { apiClient } from './apiClient'
+import { getAdminInstruments, getAdminUsers } from './instrumentsApi'
 
 export async function getApprovedMaterials() {
   const { data } = await apiClient.get<MaterialDto[]>('/materials/approved')
@@ -10,6 +11,41 @@ export async function getApprovedMaterials() {
 export async function getMyUploadedMaterials(params?: { search?: string; page?: number; pageSize?: number }) {
   const { data } = await apiClient.get<PagedResult<MaterialDto>>('/materials/my-uploads', { params })
   return data
+}
+
+export type TeacherDashboardSummary = {
+  approvedAvailableCount: number
+  myUploadsCount: number
+  pendingCount: number
+  rejectedCount: number
+}
+
+async function getAllMyUploadedMaterials() {
+  const pageSize = 100
+  const firstPage = await getMyUploadedMaterials({ page: 1, pageSize })
+  const allItems = [...firstPage.items]
+  const totalPages = Math.ceil(firstPage.totalCount / pageSize)
+
+  for (let page = 2; page <= totalPages; page++) {
+    const result = await getMyUploadedMaterials({ page, pageSize })
+    allItems.push(...result.items)
+  }
+
+  return { items: allItems, totalCount: firstPage.totalCount }
+}
+
+export async function getTeacherDashboardSummary(): Promise<TeacherDashboardSummary> {
+  const [approvedMaterials, myUploads] = await Promise.all([
+    getApprovedMaterials(),
+    getAllMyUploadedMaterials(),
+  ])
+
+  return {
+    approvedAvailableCount: approvedMaterials.length,
+    myUploadsCount: myUploads.totalCount,
+    pendingCount: myUploads.items.filter((material) => material.status === 'Pending').length,
+    rejectedCount: myUploads.items.filter((material) => material.status === 'Rejected').length,
+  }
 }
 
 export async function getTeacherWallet() {
@@ -30,6 +66,42 @@ export async function getAdminMaterials(params?: {
 export async function getArchivedMaterials(params?: { search?: string; page?: number; pageSize?: number }) {
   const { data } = await apiClient.get<PagedResult<MaterialDto>>('/admin/materials/archived', { params })
   return data
+}
+
+export type AdminDashboardSummary = {
+  pendingMaterialsCount: number
+  approvedMaterialsCount: number
+  rejectedMaterialsCount: number
+  archivedMaterialsCount: number
+  activeTeachersCount: number
+  activeInstrumentsCount: number
+}
+
+export async function getAdminDashboardSummary(): Promise<AdminDashboardSummary> {
+  const [
+    pendingMaterials,
+    approvedMaterials,
+    rejectedMaterials,
+    archivedMaterials,
+    users,
+    instruments,
+  ] = await Promise.all([
+    getAdminMaterials({ status: 'Pending', page: 1, pageSize: 1 }),
+    getAdminMaterials({ status: 'Approved', page: 1, pageSize: 1 }),
+    getAdminMaterials({ status: 'Rejected', page: 1, pageSize: 1 }),
+    getArchivedMaterials({ page: 1, pageSize: 1 }),
+    getAdminUsers(),
+    getAdminInstruments(),
+  ])
+
+  return {
+    pendingMaterialsCount: pendingMaterials.totalCount,
+    approvedMaterialsCount: approvedMaterials.totalCount,
+    rejectedMaterialsCount: rejectedMaterials.totalCount,
+    archivedMaterialsCount: archivedMaterials.totalCount,
+    activeTeachersCount: users.filter((user) => user.role === 'Teacher' && user.isActive).length,
+    activeInstrumentsCount: instruments.filter((instrument) => instrument.isActive).length,
+  }
 }
 
 export async function getMaterialPreviewDetails(id: number) {
@@ -83,6 +155,21 @@ export async function deleteArchivedMaterialPermanently(id: number) {
 
 export async function likeMaterial(id: number) {
   const { data } = await apiClient.post<MaterialDto>(`/materials/${id}/like`)
+  return data
+}
+
+export async function getFavoriteMaterials() {
+  const { data } = await apiClient.get<MaterialDto[]>('/materials/favorites')
+  return data
+}
+
+export async function addFavoriteMaterial(id: number) {
+  const { data } = await apiClient.post<MaterialDto>(`/materials/${id}/favorite`)
+  return data
+}
+
+export async function removeFavoriteMaterial(id: number) {
+  const { data } = await apiClient.delete<MaterialDto>(`/materials/${id}/favorite`)
   return data
 }
 

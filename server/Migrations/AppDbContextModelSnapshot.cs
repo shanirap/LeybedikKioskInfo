@@ -238,6 +238,24 @@ namespace LeybedikInfoKiosk.Server.Migrations
                     b.ToTable("MaterialDownloads");
                 });
 
+            modelBuilder.Entity("LeybedikInfoKiosk.Server.Models.MaterialFavorite", b =>
+                {
+                    b.Property<int>("MaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("MaterialId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("MaterialFavorites");
+                });
+
             modelBuilder.Entity("LeybedikInfoKiosk.Server.Models.MaterialLike", b =>
                 {
                     b.Property<int>("MaterialId")
@@ -386,6 +404,25 @@ namespace LeybedikInfoKiosk.Server.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("LeybedikInfoKiosk.Server.Models.MaterialFavorite", b =>
+                {
+                    b.HasOne("LeybedikInfoKiosk.Server.Models.Material", "Material")
+                        .WithMany("MaterialFavorites")
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LeybedikInfoKiosk.Server.Models.User", "User")
+                        .WithMany("MaterialFavorites")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Material");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("LeybedikInfoKiosk.Server.Models.MaterialLike", b =>
                 {
                     b.HasOne("LeybedikInfoKiosk.Server.Models.Material", "Material")
@@ -435,12 +472,16 @@ namespace LeybedikInfoKiosk.Server.Migrations
                 {
                     b.Navigation("MaterialDownloads");
 
+                    b.Navigation("MaterialFavorites");
+
                     b.Navigation("MaterialLikes");
                 });
 
             modelBuilder.Entity("LeybedikInfoKiosk.Server.Models.User", b =>
                 {
                     b.Navigation("MaterialDownloads");
+
+                    b.Navigation("MaterialFavorites");
 
                     b.Navigation("MaterialLikes");
 

@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { getInstruments } from '../api/instrumentsApi'
 import { deleteMyUploadedMaterial, getMyUploadedMaterials, updateMyUploadedMaterial } from '../api/materialsApi'
 import { instruments, materials, pagedMaterials } from '../test/fixtures'
+import { ToastProvider } from '../utils/ToastContext'
 import { MyUploadsPage } from './MyUploadsPage'
 
 vi.mock('../api/instrumentsApi', () => ({
@@ -41,7 +42,9 @@ describe('MyUploadsPage', () => {
   function renderPage() {
     render(
       <MemoryRouter>
-        <MyUploadsPage />
+        <ToastProvider>
+          <MyUploadsPage />
+        </ToastProvider>
       </MemoryRouter>,
     )
   }

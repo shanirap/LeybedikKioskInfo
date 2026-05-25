@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getInstruments } from '../api/instrumentsApi'
 import { uploadMaterial } from '../api/materialsApi'
 import { instruments, materials } from '../test/fixtures'
+import { renderWithToast } from '../test/renderWithToast'
 import { UploadMaterialPage } from './UploadMaterialPage'
 
 vi.mock('../api/instrumentsApi', () => ({
@@ -23,7 +24,7 @@ describe('UploadMaterialPage', () => {
   })
 
   it('loads instruments and uploads the selected file as form data', async () => {
-    render(<UploadMaterialPage />)
+    renderWithToast(<UploadMaterialPage />)
 
     expect(await screen.findByRole('option', { name: 'Piano' })).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText('כותרת'), 'New worksheet')
@@ -36,6 +37,7 @@ describe('UploadMaterialPage', () => {
       new File(['pdf'], 'worksheet.pdf', { type: 'application/pdf' }),
     )
     expect(screen.getByText('worksheet.pdf')).toBeInTheDocument()
+    expect(screen.getByText('גודל: 3 B')).toBeInTheDocument()
     fireEvent.submit(screen.getByRole('button', { name: 'העלה לבדיקה' }).closest('form')!)
 
     await waitFor(() =>
@@ -50,15 +52,50 @@ describe('UploadMaterialPage', () => {
   })
 
   it('explains allowed file types and max size', async () => {
-    render(<UploadMaterialPage />)
+    renderWithToast(<UploadMaterialPage />)
 
     expect(await screen.findByText(/PDF, Word, PowerPoint ותמונות/)).toBeInTheDocument()
     expect(screen.getAllByText(/50MB/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/ניתן גם לגרור קובץ לכאן/)).toBeInTheDocument()
+  })
+
+  it('highlights the dropzone and selects a dropped file', async () => {
+    renderWithToast(<UploadMaterialPage />)
+
+    await screen.findByRole('option', { name: 'Piano' })
+    const dropzone = screen.getByText('קובץ').closest('label')
+    expect(dropzone).not.toBeNull()
+
+    fireEvent.dragEnter(dropzone!, { dataTransfer: { files: [] } })
+    expect(dropzone).toHaveClass('file-dropzone-active')
+
+    const droppedFile = new File(['pdf'], 'dropped.pdf', { type: 'application/pdf' })
+    fireEvent.drop(dropzone!, { dataTransfer: { files: [droppedFile] } })
+
+    expect(dropzone).not.toHaveClass('file-dropzone-active')
+    expect(screen.getByText('dropped.pdf')).toBeInTheDocument()
+    expect(screen.getByText('גודל: 3 B')).toBeInTheDocument()
+  })
+
+  it('applies the same size validation to dropped files', async () => {
+    renderWithToast(<UploadMaterialPage />)
+
+    await screen.findByRole('option', { name: 'Piano' })
+    const dropzone = screen.getByText('קובץ').closest('label')
+    expect(dropzone).not.toBeNull()
+
+    const oversizedFile = new File(['x'], 'huge.pdf', { type: 'application/pdf' })
+    Object.defineProperty(oversizedFile, 'size', { value: 50_000_001 })
+    fireEvent.drop(dropzone!, { dataTransfer: { files: [oversizedFile] } })
+
+    expect(screen.getByText('huge.pdf')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('הקובץ גדול מדי. הגודל המרבי הוא 50MB.')
+    expect(screen.getByRole('button', { name: 'העלה לבדיקה' })).toBeDisabled()
   })
 
   it('prevents upload when no instrument is available', async () => {
     vi.mocked(getInstruments).mockResolvedValue([])
-    render(<UploadMaterialPage />)
+    renderWithToast(<UploadMaterialPage />)
 
     expect(await screen.findByText('אין לך כרגע כלי נגינה זמינים להעלאה.')).toBeInTheDocument()
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
@@ -73,12 +110,32 @@ describe('UploadMaterialPage', () => {
     expect(uploadMaterial).not.toHaveBeenCalled()
   })
 
+  it('blocks upload and shows a clear error when the file exceeds 50MB', async () => {
+    renderWithToast(<UploadMaterialPage />)
+
+    await screen.findByRole('option', { name: 'Piano' })
+    await userEvent.type(screen.getByLabelText('כותרת'), 'Huge file')
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    const oversizedFile = new File(['x'], 'huge.pdf', { type: 'application/pdf' })
+    Object.defineProperty(oversizedFile, 'size', { value: 50_000_001 })
+    await userEvent.upload(fileInput, oversizedFile)
+
+    expect(screen.getByText('huge.pdf')).toBeInTheDocument()
+    expect(screen.getByText('גודל: 47.7 MB')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('הקובץ גדול מדי. הגודל המרבי הוא 50MB.')
+    expect(screen.getByRole('button', { name: 'העלה לבדיקה' })).toBeDisabled()
+
+    fireEvent.submit(screen.getByRole('button', { name: 'העלה לבדיקה' }).closest('form')!)
+    expect(await screen.findByRole('status')).toHaveTextContent('הקובץ גדול מדי. הגודל המרבי הוא 50MB.')
+    expect(uploadMaterial).not.toHaveBeenCalled()
+  })
+
   it('shows translated server validation errors', async () => {
     vi.mocked(uploadMaterial).mockRejectedValue({
       isAxiosError: true,
       response: { data: { message: 'File signature does not match file type.' } },
     })
-    render(<UploadMaterialPage />)
+    renderWithToast(<UploadMaterialPage />)
 
     await screen.findByRole('option', { name: 'Piano' })
     await userEvent.type(screen.getByLabelText('כותרת'), 'Bad file')

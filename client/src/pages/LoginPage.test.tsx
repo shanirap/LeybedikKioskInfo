@@ -18,6 +18,8 @@ function renderLogin() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/teacher-library" element={<div>Teacher library</div>} />
+          <Route path="/teacher/dashboard" element={<div>Teacher dashboard</div>} />
+          <Route path="/admin/dashboard" element={<div>Admin dashboard</div>} />
           <Route path="/admin/pending-materials" element={<div>Admin pending</div>} />
         </Routes>
       </AuthProvider>
@@ -35,7 +37,7 @@ describe('LoginPage', () => {
     expect(watermark?.querySelector('img')).toHaveAttribute('alt', '')
   })
 
-  it('logs in teachers and navigates to the teacher library', async () => {
+  it('logs in teachers and navigates to the teacher dashboard', async () => {
     vi.mocked(login).mockResolvedValue(teacherUser)
     renderLogin()
 
@@ -43,11 +45,11 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('סיסמה'), 'Teacher123!')
     await userEvent.click(screen.getByRole('button', { name: 'כניסה' }))
 
-    await waitFor(() => expect(screen.getByText('Teacher library')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Teacher dashboard')).toBeInTheDocument())
     expect(localStorage.getItem('leybedik_auth')).toContain('teacher-token')
   })
 
-  it('logs in admins and navigates to the pending materials page', async () => {
+  it('logs in admins and navigates to the admin dashboard', async () => {
     vi.mocked(login).mockResolvedValue(adminUser)
     renderLogin()
 
@@ -55,7 +57,7 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('סיסמה'), 'Admin123!')
     await userEvent.click(screen.getByRole('button', { name: 'כניסה' }))
 
-    await waitFor(() => expect(screen.getByText('Admin pending')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Admin dashboard')).toBeInTheDocument())
   })
 
   it('shows a translated error when login fails', async () => {

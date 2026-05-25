@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { getArchivedMaterials, restoreMaterial, deleteArchivedMaterialPermanently } from '../api/materialsApi'
 import { materials, pagedMaterials } from '../test/fixtures'
+import { ToastProvider } from '../utils/ToastContext'
 import { AdminArchivedMaterialsPage } from './AdminArchivedMaterialsPage'
 
 vi.mock('../api/materialsApi', () => ({
@@ -29,10 +30,12 @@ describe('AdminArchivedMaterialsPage', () => {
   function renderPage(initialEntry = '/admin/archived-materials') {
     render(
       <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path="/admin/archived-materials" element={<AdminArchivedMaterialsPage />} />
-          <Route path="/materials/:id/preview" element={<div>Preview page</div>} />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route path="/admin/archived-materials" element={<AdminArchivedMaterialsPage />} />
+            <Route path="/materials/:id/preview" element={<div>Preview page</div>} />
+          </Routes>
+        </ToastProvider>
       </MemoryRouter>,
     )
   }

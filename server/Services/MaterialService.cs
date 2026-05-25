@@ -28,17 +28,20 @@ public class MaterialService
     private readonly AppDbContext _db;
     private readonly IFileStorageService _fileStorage;
     private readonly AuditLogService _auditLogService;
+    private readonly LikeNotificationService _likeNotificationService;
     private readonly ILogger<MaterialService> _logger;
 
     public MaterialService(
         AppDbContext db,
         IFileStorageService fileStorage,
         AuditLogService auditLogService,
+        LikeNotificationService likeNotificationService,
         ILogger<MaterialService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _auditLogService = auditLogService;
+        _likeNotificationService = likeNotificationService;
         _logger = logger;
     }
 
@@ -48,7 +51,27 @@ public class MaterialService
         return await VisibleMaterialsQuery(user)
             .Where(m => m.Status == MaterialStatus.Approved)
             .OrderByDescending(m => m.ApprovedAtUtc ?? m.CreatedAtUtc)
-            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                m.MaterialFavorites.Any(favorite => favorite.UserId == userId)))
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyCollection<MaterialDto>> GetFavoritesAsync(ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        return await VisibleMaterialsQuery(user)
+            .Where(m => m.Status == MaterialStatus.Approved)
+            .Where(m => m.MaterialFavorites.Any(favorite => favorite.UserId == userId))
+            .OrderByDescending(m => m.MaterialFavorites
+                .Where(favorite => favorite.UserId == userId)
+                .Select(favorite => favorite.CreatedAtUtc)
+                .First())
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                true))
             .ToListAsync();
     }
 
@@ -61,7 +84,10 @@ public class MaterialService
             .Include(m => m.UploadedByUser)
             .Where(m => !m.IsDeleted && m.UploadedByUserId == userId)
             .OrderByDescending(m => m.CreatedAtUtc)
-            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                m.MaterialFavorites.Any(favorite => favorite.UserId == userId)))
             .ToListAsync();
     }
 
@@ -73,7 +99,10 @@ public class MaterialService
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
             .Where(m => m.Id == id)
-            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                m.MaterialFavorites.Any(favorite => favorite.UserId == userId)))
             .FirstOrDefaultAsync();
     }
 
@@ -111,7 +140,7 @@ public class MaterialService
             .OrderByDescending(m => m.CreatedAtUtc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => ToDto(m, false))
+            .Select(m => ToDto(m, false, false))
             .ToListAsync();
 
         return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
@@ -125,7 +154,7 @@ public class MaterialService
             .Include(m => m.UploadedByUser)
             .Where(m => !m.IsDeleted && m.Status == MaterialStatus.Pending)
             .OrderBy(m => m.CreatedAtUtc)
-            .Select(m => ToDto(m, false))
+            .Select(m => ToDto(m, false, false))
             .ToListAsync();
     }
 
@@ -156,7 +185,7 @@ public class MaterialService
             .OrderByDescending(m => m.DeletedAtUtc ?? m.CreatedAtUtc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => ToDto(m, false))
+            .Select(m => ToDto(m, false, false))
             .ToListAsync();
 
         return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
@@ -186,7 +215,10 @@ public class MaterialService
             .OrderByDescending(m => m.CreatedAtUtc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                m.MaterialFavorites.Any(favorite => favorite.UserId == userId)))
             .ToListAsync();
 
         return new PagedResult<MaterialDto>(items, totalCount, page, pageSize);
@@ -242,7 +274,7 @@ public class MaterialService
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
             .Where(m => m.Id == material.Id)
-            .Select(m => ToDto(m, false))
+            .Select(m => ToDto(m, false, false))
             .FirstAsync();
 
         return MaterialUploadResult.Success(created);
@@ -335,7 +367,7 @@ public class MaterialService
             like.MaterialId == id &&
             like.UserId == userId);
         if (alreadyLiked)
-            return MaterialLikeResult.Success(ToDto(material, true));
+            return MaterialLikeResult.Success(await ToDtoForUserAsync(material, userId, true));
 
         _db.MaterialLikes.Add(new MaterialLike
         {
@@ -345,8 +377,59 @@ public class MaterialService
         });
         material.LikeCount += 1;
         await _db.SaveChangesAsync();
+        await _likeNotificationService.NotifyMaterialLikedAsync(material.UploadedByUserId, material.Id);
 
-        return MaterialLikeResult.Success(ToDto(material, true));
+        return MaterialLikeResult.Success(await ToDtoForUserAsync(material, userId, true));
+    }
+
+    public async Task<MaterialFavoriteResult> AddFavoriteAsync(int id, ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        var material = await VisibleMaterialsQuery(user)
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .FirstOrDefaultAsync(m => m.Id == id && m.Status == MaterialStatus.Approved);
+
+        if (material is null)
+            return MaterialFavoriteResult.NotFound();
+
+        var alreadyFavorited = await _db.MaterialFavorites.AnyAsync(favorite =>
+            favorite.MaterialId == id &&
+            favorite.UserId == userId);
+        if (!alreadyFavorited)
+        {
+            _db.MaterialFavorites.Add(new MaterialFavorite
+            {
+                MaterialId = id,
+                UserId = userId,
+                CreatedAtUtc = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync();
+        }
+
+        return MaterialFavoriteResult.Success(await ToDtoForUserAsync(material, userId, isFavorited: true));
+    }
+
+    public async Task<MaterialFavoriteResult> RemoveFavoriteAsync(int id, ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        var favorite = await _db.MaterialFavorites
+            .FirstOrDefaultAsync(entry => entry.MaterialId == id && entry.UserId == userId);
+        if (favorite is not null)
+        {
+            _db.MaterialFavorites.Remove(favorite);
+            await _db.SaveChangesAsync();
+        }
+
+        var material = await VisibleMaterialsQuery(user)
+            .Include(m => m.Instrument)
+            .Include(m => m.UploadedByUser)
+            .FirstOrDefaultAsync(m => m.Id == id && m.Status == MaterialStatus.Approved);
+
+        if (material is null)
+            return MaterialFavoriteResult.NotFound();
+
+        return MaterialFavoriteResult.Success(await ToDtoForUserAsync(material, userId, isFavorited: false));
     }
 
     public async Task<MaterialDto?> ApproveAsync(int id, int actorUserId)
@@ -376,7 +459,7 @@ public class MaterialService
             material.Id,
             $"אושר החומר: {material.Title}.");
 
-        return ToDto(material, false);
+        return ToDto(material, false, false);
     }
 
     public async Task<MaterialDto?> RejectAsync(int id, RejectMaterialRequest request, int actorUserId)
@@ -406,7 +489,7 @@ public class MaterialService
             material.Id,
             $"נדחה החומר: {material.Title}.");
 
-        return ToDto(material, false);
+        return ToDto(material, false, false);
     }
 
     public async Task<MaterialDeleteResult> DeleteByAdminAsync(int id, int actorUserId)
@@ -479,7 +562,7 @@ public class MaterialService
             material.Id,
             $"שוחזר החומר: {material.Title}.");
 
-        return ToDto(material, false);
+        return ToDto(material, false, false);
     }
 
     public async Task<MaterialDeleteResult> PermanentDeleteByAdminAsync(int id, int actorUserId)
@@ -522,8 +605,10 @@ public class MaterialService
             $"מחיקה לצמיתות של חומר מהארכיון: {materialTitle} (#{materialId}).");
 
         var likes = await _db.MaterialLikes.Where(like => like.MaterialId == materialId).ToListAsync();
+        var favorites = await _db.MaterialFavorites.Where(favorite => favorite.MaterialId == materialId).ToListAsync();
         var downloads = await _db.MaterialDownloads.Where(download => download.MaterialId == materialId).ToListAsync();
         _db.MaterialLikes.RemoveRange(likes);
+        _db.MaterialFavorites.RemoveRange(favorites);
         _db.MaterialDownloads.RemoveRange(downloads);
         _db.Materials.Remove(material);
         await _db.SaveChangesAsync();
@@ -593,7 +678,10 @@ public class MaterialService
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
             .Where(m => m.Id == material.Id)
-            .Select(m => ToDto(m, m.MaterialLikes.Any(like => like.UserId == userId)))
+            .Select(m => ToDto(
+                m,
+                m.MaterialLikes.Any(like => like.UserId == userId),
+                m.MaterialFavorites.Any(favorite => favorite.UserId == userId)))
             .FirstAsync();
 
         return MaterialUpdateResult.Success(updated);
@@ -671,7 +759,7 @@ public class MaterialService
             .Include(m => m.Instrument)
             .Include(m => m.UploadedByUser)
             .Where(m => m.Id == material.Id)
-            .Select(m => ToDto(m, false))
+            .Select(m => ToDto(m, false, false))
             .FirstAsync();
 
         return MaterialUpdateResult.Success(updated);
@@ -834,7 +922,22 @@ public class MaterialService
             .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static MaterialDto ToDto(Material material, bool isLikedByCurrentUser)
+    private async Task<MaterialDto> ToDtoForUserAsync(Material material, int userId, bool? isLiked = null, bool? isFavorited = null)
+    {
+        var isLikedByCurrentUser = isLiked ?? await _db.MaterialLikes.AnyAsync(like =>
+            like.MaterialId == material.Id &&
+            like.UserId == userId);
+        var isFavoritedByCurrentUser = isFavorited ?? await _db.MaterialFavorites.AnyAsync(favorite =>
+            favorite.MaterialId == material.Id &&
+            favorite.UserId == userId);
+
+        return ToDto(material, isLikedByCurrentUser, isFavoritedByCurrentUser);
+    }
+
+    private static MaterialDto ToDto(
+        Material material,
+        bool isLikedByCurrentUser,
+        bool isFavoritedByCurrentUser)
     {
         return new MaterialDto(
             material.Id,
@@ -850,6 +953,7 @@ public class MaterialService
             material.DownloadCount,
             material.LikeCount,
             isLikedByCurrentUser,
+            isFavoritedByCurrentUser,
             material.CreatedAtUtc,
             material.ApprovedAtUtc,
             material.RejectedAtUtc,
@@ -950,4 +1054,22 @@ public enum MaterialLikeStatus
     Success,
     NotFound,
     Invalid,
+}
+
+public record MaterialFavoriteResult(
+    MaterialFavoriteStatus Status,
+    MaterialDto? Material = null,
+    string? ErrorMessage = null)
+{
+    public static MaterialFavoriteResult Success(MaterialDto material)
+        => new(MaterialFavoriteStatus.Success, material);
+
+    public static MaterialFavoriteResult NotFound()
+        => new(MaterialFavoriteStatus.NotFound);
+}
+
+public enum MaterialFavoriteStatus
+{
+    Success,
+    NotFound,
 }

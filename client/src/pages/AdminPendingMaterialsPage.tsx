@@ -11,11 +11,13 @@ import {
 import { ActionMenu } from '../components/ActionMenu'
 import { Button } from '../components/Button'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { RejectMaterialDialog } from '../components/RejectMaterialDialog'
 import { IconButton } from '../components/IconButton'
 import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import { Pager } from '../components/Pager'
 import type { MaterialDto } from '../types/material'
 import { formatDateTime, formatMaterialLevel, formatStatus } from '../utils/displayText'
+import { useToast } from '../utils/useToast'
 
 type StatusFilter = 'All' | MaterialDto['status']
 
@@ -66,6 +68,7 @@ function buildAdminMenuItems(
 export function AdminPendingMaterialsPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { showSuccess, showError } = useToast()
   const [materials, setMaterials] = useState<MaterialDto[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
@@ -73,17 +76,9 @@ export function AdminPendingMaterialsPage() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [message, setMessage] = useState<string | null>(
-    () => (location.state as { message?: string } | null)?.message ?? null,
-  )
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [materialToArchive, setMaterialToArchive] = useState<MaterialDto | null>(null)
-
-  useEffect(() => {
-    if ((location.state as { message?: string } | null)?.message) {
-      navigate(location.pathname, { replace: true, state: null })
-    }
-  }, [location.pathname, location.state, navigate])
+  const [materialToReject, setMaterialToReject] = useState<number | null>(null)
 
   useEffect(() => {
     loadMaterials()
@@ -92,7 +87,7 @@ export function AdminPendingMaterialsPage() {
 
   async function loadMaterials() {
     setLoading(true)
-    setError(null)
+    setLoadError(null)
     try {
       const result = await getAdminMaterials({
         status: statusFilter === 'All' ? undefined : statusFilter,
@@ -103,7 +98,9 @@ export function AdminPendingMaterialsPage() {
       setMaterials(result.items)
       setTotalCount(result.totalCount)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לטעון את החומרים.'))
+      const message = getApiErrorMessage(err, 'לא ניתן לטעון את החומרים.')
+      setLoadError(message)
+      showError(message)
     } finally {
       setLoading(false)
     }
@@ -125,36 +122,38 @@ export function AdminPendingMaterialsPage() {
   }
 
   async function handleApprove(id: number) {
-    setMessage(null)
-    setError(null)
     try {
       await approveMaterial(id)
-      setMessage('החומר אושר.')
+      showSuccess('החומר אושר.')
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לאשר את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן לאשר את החומר.'))
     }
   }
 
-  async function handleReject(id: number) {
-    const reason = window.prompt('סיבת דחייה (אופציונלי):') ?? undefined
-    setMessage(null)
-    setError(null)
+  function handleReject(id: number) {
+    setMaterialToReject(id)
+  }
+
+  async function confirmReject(reason: string) {
+    if (!materialToReject) return
+
     try {
-      await rejectMaterial(id, reason)
-      setMessage('החומר נדחה.')
+      await rejectMaterial(materialToReject, reason)
+      setMaterialToReject(null)
+      showSuccess('החומר נדחה.')
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לדחות את החומר.'))
+      setMaterialToReject(null)
+      showError(getApiErrorMessage(err, 'לא ניתן לדחות את החומר.'))
     }
   }
 
   async function handleDownload(material: MaterialDto) {
-    setError(null)
     try {
       await downloadMaterialForReview(material.id, material.fileName)
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן להוריד את הקובץ.'))
+      showError(getApiErrorMessage(err, 'לא ניתן להוריד את הקובץ.'))
     }
   }
 
@@ -169,15 +168,13 @@ export function AdminPendingMaterialsPage() {
   async function confirmArchive() {
     if (!materialToArchive) return
 
-    setError(null)
-    setMessage(null)
     try {
       await deleteAdminMaterial(materialToArchive.id)
-      setMessage('החומר הועבר לארכיון.')
+      showSuccess('החומר הועבר לארכיון.')
       setMaterialToArchive(null)
       await loadMaterials()
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן לארכב את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן לארכב את החומר.'))
       setMaterialToArchive(null)
     }
   }
@@ -233,9 +230,7 @@ export function AdminPendingMaterialsPage() {
       </form>
 
       {loading && <p className="empty-state">טוען חומרים...</p>}
-      {message && <p className="success-text">{message}</p>}
-      {error && <p className="error-text">{error}</p>}
-      {!loading && !error && totalCount === 0 && (
+      {!loading && !loadError && totalCount === 0 && (
         <p className="empty-state">
           {search ? 'לא נמצאו חומרים התואמים את החיפוש.' : 'אין כרגע חומרים בסטטוס שנבחר.'}
         </p>
@@ -309,6 +304,12 @@ export function AdminPendingMaterialsPage() {
         })}
       </div>
       <Pager page={page} pageSize={PAGE_SIZE} totalCount={totalCount} onPageChange={setPage} />
+      {materialToReject !== null && (
+        <RejectMaterialDialog
+          onConfirm={(reason) => void confirmReject(reason)}
+          onCancel={() => setMaterialToReject(null)}
+        />
+      )}
       {materialToArchive && (
         <ConfirmDialog
           title="ארכוב חומר"

@@ -1,10 +1,17 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
 import { getApiErrorMessage } from '../api/apiClient'
 import { getInstruments } from '../api/instrumentsApi'
 import { uploadMaterial } from '../api/materialsApi'
 import type { InstrumentDto } from '../types/material'
+import {
+  formatFileSize,
+  isMaterialUploadTooLarge,
+  MATERIAL_UPLOAD_TOO_LARGE_MESSAGE,
+} from '../utils/materialUploadFile'
+import { useToast } from '../utils/useToast'
 
 export function UploadMaterialPage() {
+  const { showSuccess, showError } = useToast()
   const [instruments, setInstruments] = useState<InstrumentDto[]>([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -13,8 +20,37 @@ export function UploadMaterialPage() {
   const [file, setFile] = useState<File | null>(null)
   const [fileInputKey, setFileInputKey] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+  const fileTooLarge = file !== null && isMaterialUploadTooLarge(file)
+
+  function selectFile(selectedFile: File | null) {
+    setFile(selectedFile)
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDraggingOver(true)
+  }
+
+  function handleDragOver(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDraggingOver(true)
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDraggingOver(false)
+  }
+
+  function handleDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDraggingOver(false)
+    selectFile(event.dataTransfer.files?.[0] ?? null)
+  }
 
   useEffect(() => {
     async function loadInstruments() {
@@ -23,31 +59,33 @@ export function UploadMaterialPage() {
         setInstruments(items)
         if (items.length > 0) setInstrumentId(String(items[0].id))
       } catch (err) {
-        setError(getApiErrorMessage(err, 'לא ניתן לטעון את רשימת הכלים.'))
+        showError(getApiErrorMessage(err, 'לא ניתן לטעון את רשימת הכלים.'))
       }
     }
 
     loadInstruments()
-  }, [])
+  }, [showError])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!instrumentId) {
-      setError('אין כלי נגינה זמינים להעלאה. יש לפנות למנהל לשיוך כלי.')
+      showError('אין כלי נגינה זמינים להעלאה. יש לפנות למנהל לשיוך כלי.')
       return
     }
     if (!title.trim()) {
-      setError('יש להזין כותרת לחומר.')
+      showError('יש להזין כותרת לחומר.')
       return
     }
     if (!file) {
-      setError('יש לבחור קובץ להעלאה.')
+      showError('יש לבחור קובץ להעלאה.')
+      return
+    }
+    if (isMaterialUploadTooLarge(file)) {
+      showError(MATERIAL_UPLOAD_TOO_LARGE_MESSAGE)
       return
     }
 
     setLoading(true)
-    setError(null)
-    setMessage(null)
 
     try {
       const formData = new FormData()
@@ -63,9 +101,9 @@ export function UploadMaterialPage() {
       setLevel('Beginner')
       setFile(null)
       setFileInputKey((current) => current + 1)
-      setMessage('החומר הועלה וממתין לאישור מנהל.')
+      showSuccess('החומר הועלה וממתין לאישור מנהל.')
     } catch (err) {
-      setError(getApiErrorMessage(err, 'לא ניתן להעלות את החומר.'))
+      showError(getApiErrorMessage(err, 'לא ניתן להעלות את החומר.'))
     } finally {
       setLoading(false)
     }
@@ -83,9 +121,6 @@ export function UploadMaterialPage() {
           סוגי קבצים מותרים: PDF, Word, PowerPoint ותמונות. הגודל המרבי הוא 50MB.
         </p>
       </div>
-
-      {message && <p className="success-text">{message}</p>}
-      {error && <p className="error-text">{error}</p>}
 
       <div className="upload-layout">
         <form className="form-panel upload-form" onSubmit={handleSubmit}>
@@ -137,23 +172,35 @@ export function UploadMaterialPage() {
             </select>
           </label>
 
-          <label className="file-dropzone">
+          <label
+            className={`file-dropzone${isDraggingOver ? ' file-dropzone-active' : ''}${fileTooLarge ? ' file-dropzone-invalid' : ''}`}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <span className="file-dropzone-title">קובץ</span>
             <input
               key={fileInputKey}
               type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
               required
             />
             <span className="file-picker-button">בחירת קובץ</span>
             <strong>{file ? file.name : 'לא נבחר קובץ'}</strong>
-            <small>PDF, Word, PowerPoint או תמונה עד 50MB</small>
+            {file && <span className="file-dropzone-meta">גודל: {formatFileSize(file.size)}</span>}
+            {fileTooLarge && (
+              <p className="file-dropzone-error" role="alert">
+                {MATERIAL_UPLOAD_TOO_LARGE_MESSAGE}
+              </p>
+            )}
+            <small>PDF, Word, PowerPoint או תמונה עד 50MB. ניתן גם לגרור קובץ לכאן.</small>
           </label>
 
           <button
             className="submit-button"
             type="submit"
-            disabled={loading || !file || instruments.length === 0}
+            disabled={loading || !file || fileTooLarge || instruments.length === 0}
           >
             {loading ? 'מעלה...' : 'העלה לבדיקה'}
           </button>

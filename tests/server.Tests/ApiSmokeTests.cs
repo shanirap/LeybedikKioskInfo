@@ -559,6 +559,150 @@ public class ApiSmokeTests
     }
 
     [Fact]
+    public async Task Teacher_CanAddAndRemoveFavorite()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var addResponse = await client.PostAsync("/api/materials/1/favorite", null);
+        var duplicateAddResponse = await client.PostAsync("/api/materials/1/favorite", null);
+        var favoritesResponse = await client.GetAsync("/api/materials/favorites");
+        var approvedResponse = await client.GetAsync("/api/materials/approved");
+        var removeResponse = await client.DeleteAsync("/api/materials/1/favorite");
+
+        addResponse.EnsureSuccessStatusCode();
+        duplicateAddResponse.EnsureSuccessStatusCode();
+        favoritesResponse.EnsureSuccessStatusCode();
+        approvedResponse.EnsureSuccessStatusCode();
+        removeResponse.EnsureSuccessStatusCode();
+
+        var added = await addResponse.Content.ReadFromJsonAsync<MaterialDto>();
+        var favorites = await favoritesResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+        var approved = await approvedResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+        var removed = await removeResponse.Content.ReadFromJsonAsync<MaterialDto>();
+
+        Assert.True(added!.IsFavoritedByCurrentUser);
+        Assert.False(added.IsLikedByCurrentUser);
+        Assert.Single(favorites!);
+        Assert.Equal(1, favorites[0].Id);
+        Assert.True(approved!.Single(m => m.Id == 1).IsFavoritedByCurrentUser);
+        Assert.False(removed!.IsFavoritedByCurrentUser);
+    }
+
+    [Fact]
+    public async Task Favorite_UnapprovedMaterial_ReturnsNotFoundForTeacher()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var response = await client.PostAsync("/api/materials/2/favorite", null);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task LikingMaterial_DoesNotMarkItAsFavorite()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+        using var form = CreateUploadForm(
+            "Separate Like Favorite",
+            1,
+            "%PDF-1.4"u8.ToArray(),
+            "like-favorite.pdf",
+            "application/pdf");
+        var uploadResponse = await client.PostAsync("/api/materials/upload", form);
+        uploadResponse.EnsureSuccessStatusCode();
+        var uploaded = await uploadResponse.Content.ReadFromJsonAsync<MaterialDto>();
+        var approveResponse = await client.PostAsync($"/api/admin/materials/{uploaded!.Id}/approve", null);
+        approveResponse.EnsureSuccessStatusCode();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var likeResponse = await client.PostAsync($"/api/materials/{uploaded.Id}/like", null);
+        var favoritesResponse = await client.GetAsync("/api/materials/favorites");
+
+        likeResponse.EnsureSuccessStatusCode();
+        favoritesResponse.EnsureSuccessStatusCode();
+
+        var liked = await likeResponse.Content.ReadFromJsonAsync<MaterialDto>();
+        var favorites = await favoritesResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+
+        Assert.True(liked!.IsLikedByCurrentUser);
+        Assert.False(liked.IsFavoritedByCurrentUser);
+        Assert.DoesNotContain(favorites!, favorite => favorite.Id == uploaded.Id);
+    }
+
+    [Fact]
+    public async Task GetFavorites_InitiallyEmptyForTeacher()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var response = await client.GetAsync("/api/materials/favorites");
+
+        response.EnsureSuccessStatusCode();
+        var favorites = await response.Content.ReadFromJsonAsync<List<MaterialDto>>();
+
+        Assert.NotNull(favorites);
+        Assert.Empty(favorites);
+    }
+
+    [Fact]
+    public async Task ApprovedMaterials_IncludeFavoriteStateForCurrentUser()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "teacher@test.local", "Teacher123!");
+
+        var beforeResponse = await client.GetAsync("/api/materials/approved");
+        beforeResponse.EnsureSuccessStatusCode();
+        var before = await beforeResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+        var material = Assert.Single(before!, item => item.Id == 1);
+        Assert.False(material.IsFavoritedByCurrentUser);
+
+        var addResponse = await client.PostAsync("/api/materials/1/favorite", null);
+        addResponse.EnsureSuccessStatusCode();
+
+        var afterResponse = await client.GetAsync("/api/materials/approved");
+        afterResponse.EnsureSuccessStatusCode();
+        var after = await afterResponse.Content.ReadFromJsonAsync<List<MaterialDto>>();
+
+        Assert.True(after!.Single(item => item.Id == 1).IsFavoritedByCurrentUser);
+    }
+
+    [Fact]
+    public async Task Admin_GetMaterials_ReturnsRejectedCount()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        var rejectResponse = await client.PostAsJsonAsync("/api/admin/materials/3/reject", new { reason = "Needs work" });
+        rejectResponse.EnsureSuccessStatusCode();
+
+        var response = await client.GetAsync("/api/admin/materials?status=Rejected&page=1&pageSize=1");
+
+        response.EnsureSuccessStatusCode();
+        var paged = await response.Content.ReadFromJsonAsync<TestPagedResult<MaterialDto>>();
+
+        Assert.NotNull(paged);
+        Assert.Equal(1, paged.TotalCount);
+        Assert.Equal("Rejected", paged.Items[0].Status);
+    }
+
+    [Fact]
     public async Task Admin_CanCreateAndUpdateUser()
     {
         await using var factory = new TestApplicationFactory();
@@ -1054,6 +1198,12 @@ public class ApiSmokeTests
                 UserId = 2,
                 CreatedAtUtc = new DateTime(2026, 1, 2, 12, 0, 0, DateTimeKind.Utc),
             });
+            db.MaterialFavorites.Add(new MaterialFavorite
+            {
+                MaterialId = 1,
+                UserId = 2,
+                CreatedAtUtc = new DateTime(2026, 1, 2, 12, 0, 0, DateTimeKind.Utc),
+            });
             db.MaterialDownloads.Add(new MaterialDownload
             {
                 MaterialId = 1,
@@ -1089,6 +1239,7 @@ public class ApiSmokeTests
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             Assert.Null(await db.Materials.FirstOrDefaultAsync(material => material.Id == 1));
             Assert.Empty(await db.MaterialLikes.Where(like => like.MaterialId == 1).ToListAsync());
+            Assert.Empty(await db.MaterialFavorites.Where(favorite => favorite.MaterialId == 1).ToListAsync());
             Assert.Empty(await db.MaterialDownloads.Where(download => download.MaterialId == 1).ToListAsync());
         }
     }

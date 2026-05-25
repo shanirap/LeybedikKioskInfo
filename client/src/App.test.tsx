@@ -30,6 +30,7 @@ describe('App shell', () => {
     renderApp('/teacher-library')
 
     expect(screen.getByText('Library page')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'לוח בקרה' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ספרייה' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'העלאת חומר' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'החשבון שלי' })).toBeInTheDocument()
@@ -40,6 +41,8 @@ describe('App shell', () => {
     renderApp('/admin/users', adminUser)
 
     expect(screen.getByText('Users page')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'לוח ניהול' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'לוח בקרה' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'משתמשים' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'ארכיון חומרים' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'יומן פעילות' })).toBeInTheDocument()

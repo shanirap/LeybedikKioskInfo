@@ -201,6 +201,104 @@
   color: #15803d;
 }
 
+.toast-viewport {
+  bottom: 1.5rem;
+  left: 50%;
+  pointer-events: none;
+  position: fixed;
+  transform: translateX(-50%);
+  width: min(24rem, calc(100vw - 2rem));
+  z-index: 1100;
+}
+
+.toast {
+  animation: toast-enter 0.2s ease-out;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-weight: 500;
+  padding: 0.875rem 1rem;
+  pointer-events: auto;
+}
+
+.toast-success {
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  color: #047857;
+}
+
+.toast-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.like-celebration-overlay {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.28);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  pointer-events: none;
+  position: fixed;
+  z-index: 1200;
+}
+
+.like-celebration-icon {
+  animation: like-celebration-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  background: #fef3c7;
+  border: 4px solid #fde68a;
+  border-radius: 999px;
+  box-shadow: 0 24px 64px rgba(146, 64, 14, 0.35);
+  color: #92400e;
+  display: grid;
+  font-size: clamp(5rem, 18vw, 9rem);
+  height: clamp(8rem, 28vw, 12rem);
+  line-height: 1;
+  place-items: center;
+  width: clamp(8rem, 28vw, 12rem);
+}
+
+@keyframes like-celebration-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.visually-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .muted {
   color: #666;
   font-size: 0.9rem;
@@ -373,6 +471,29 @@
 .confirm-dialog p {
   color: #475569;
   margin: 0 0 1rem;
+}
+
+.confirm-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0 0 1rem;
+}
+
+.confirm-dialog-field textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font: inherit;
+  min-height: 6rem;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.confirm-dialog-field textarea:focus {
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.15);
+  outline-offset: 1px;
 }
 
 .text-link {
@@ -647,7 +768,8 @@ td select {
 }
 
 .file-dropzone:hover,
-.file-dropzone:focus-within {
+.file-dropzone:focus-within,
+.file-dropzone-active {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-bg);
   transform: translateY(-1px);
@@ -674,6 +796,25 @@ td select {
 
 .file-dropzone small {
   color: var(--text);
+}
+
+.file-dropzone-meta {
+  color: #475569;
+  display: block;
+  font-size: 0.92rem;
+  margin-top: 0.35rem;
+}
+
+.file-dropzone-error {
+  color: #dc2626;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0;
+}
+
+.file-dropzone-invalid {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.12);
 }
 
 .file-picker-button {
@@ -730,6 +871,54 @@ td select {
   color: var(--text-h);
   font-size: 1.35rem;
   line-height: 1;
+}
+
+.dashboard-summary-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.dashboard-summary-card {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(234, 223, 206, 0.8);
+  border-radius: 18px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.dashboard-summary-card strong {
+  color: var(--text-h);
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.dashboard-summary-label {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.dashboard-summary-description {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.dashboard-quick-actions {
+  margin-top: 1.5rem;
+}
+
+.dashboard-quick-actions h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+}
+
+.dashboard-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .library-toolbar {
@@ -1071,6 +1260,16 @@ td select {
   background: #ffe4e6;
   border-color: #fecdd3;
   color: #be123c;
+}
+
+.icon-button-favorite {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.icon-button-favorite:disabled {
+  opacity: 0.85;
 }
 
 .action-menu {
@@ -1651,6 +1850,10 @@ tbody tr:hover td {
   .library-summary {
     grid-template-columns: repeat(3, 1fr);
     min-width: 0;
+  }
+
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .my-uploads-toolbar {

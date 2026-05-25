@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
-type IconButtonVariant = 'default' | 'ghost' | 'like'
+type IconButtonVariant = 'default' | 'ghost' | 'like' | 'favorite'
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string
@@ -12,6 +12,7 @@ const variantClass: Record<IconButtonVariant, string> = {
   default: 'icon-button',
   ghost: 'icon-button icon-button-ghost',
   like: 'icon-button icon-button-like',
+  favorite: 'icon-button icon-button-favorite',
 }
 
 export function IconButton({

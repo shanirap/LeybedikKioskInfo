@@ -3,18 +3,22 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import {
+  addFavoriteMaterial,
   downloadMaterial,
   getApprovedMaterials,
   likeMaterial,
+  removeFavoriteMaterial,
 } from '../api/materialsApi'
 import { materials, teacherUser } from '../test/fixtures'
 import { useAuth } from '../utils/useAuth'
 import { TeacherLibraryPage } from './TeacherLibraryPage'
 
 vi.mock('../api/materialsApi', () => ({
+  addFavoriteMaterial: vi.fn(),
   downloadMaterial: vi.fn(),
   getApprovedMaterials: vi.fn(),
   likeMaterial: vi.fn(),
+  removeFavoriteMaterial: vi.fn(),
 }))
 
 vi.mock('../utils/useAuth', () => ({
@@ -23,9 +27,11 @@ vi.mock('../utils/useAuth', () => ({
 
 describe('TeacherLibraryPage', () => {
   beforeEach(() => {
+    vi.mocked(addFavoriteMaterial).mockReset()
     vi.mocked(downloadMaterial).mockReset()
     vi.mocked(getApprovedMaterials).mockReset()
     vi.mocked(likeMaterial).mockReset()
+    vi.mocked(removeFavoriteMaterial).mockReset()
     vi.mocked(useAuth).mockReturnValue({
       user: teacherUser,
       login: vi.fn(),
@@ -98,6 +104,32 @@ describe('TeacherLibraryPage', () => {
     expect(likeMaterial).toHaveBeenCalledWith(1)
     expect(downloadMaterial).toHaveBeenCalledWith(1, 'rhythm.pdf')
     await waitFor(() => expect(getApprovedMaterials).toHaveBeenCalledTimes(2))
+  })
+
+  it('adds and removes favorites through the API helpers', async () => {
+    vi.mocked(addFavoriteMaterial).mockResolvedValue({
+      ...materials[0],
+      isFavoritedByCurrentUser: true,
+    })
+    vi.mocked(removeFavoriteMaterial).mockResolvedValue({
+      ...materials[0],
+      isFavoritedByCurrentUser: false,
+    })
+
+    renderPage()
+
+    await screen.findByText('Rhythm Basics')
+    const rhythmCard = screen.getByText('Rhythm Basics').closest('article')
+    expect(rhythmCard).not.toBeNull()
+    await userEvent.click(within(rhythmCard!).getByRole('button', { name: 'שמור למועדפים' }))
+    await waitFor(() =>
+      expect(within(rhythmCard!).getByRole('button', { name: 'הסר מהמועדפים' })).toBeInTheDocument(),
+    )
+
+    await userEvent.click(within(rhythmCard!).getByRole('button', { name: 'הסר מהמועדפים' }))
+
+    expect(addFavoriteMaterial).toHaveBeenCalledWith(1)
+    expect(removeFavoriteMaterial).toHaveBeenCalledWith(1)
   })
 
   it('does not allow teachers to like their own materials', async () => {

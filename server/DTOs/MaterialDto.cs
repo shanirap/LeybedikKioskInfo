@@ -14,6 +14,7 @@ public record MaterialDto(
     int DownloadCount,
     int LikeCount,
     bool IsLikedByCurrentUser,
+    bool IsFavoritedByCurrentUser,
     DateTime CreatedAtUtc,
     DateTime? ApprovedAtUtc,
     DateTime? RejectedAtUtc,

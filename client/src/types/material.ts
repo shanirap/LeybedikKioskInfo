@@ -18,6 +18,7 @@ export interface MaterialDto {
   downloadCount: number
   likeCount: number
   isLikedByCurrentUser: boolean
+  isFavoritedByCurrentUser: boolean
   createdAtUtc: string
   approvedAtUtc: string | null
   rejectedAtUtc: string | null

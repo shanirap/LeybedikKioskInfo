@@ -14,6 +14,7 @@ import {
   updateAdminMaterial,
 } from '../api/materialsApi'
 import { instruments, materials, pagedMaterials } from '../test/fixtures'
+import { ToastProvider } from '../utils/ToastContext'
 import { AdminEditMaterialPage } from './AdminEditMaterialPage'
 import { AdminPendingMaterialsPage } from './AdminPendingMaterialsPage'
 
@@ -58,11 +59,13 @@ describe('AdminPendingMaterialsPage', () => {
   function renderPage(initialEntry = '/admin/pending-materials') {
     render(
       <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path="/admin/pending-materials" element={<AdminPendingMaterialsPage />} />
-          <Route path="/admin/materials/:id/edit" element={<AdminEditMaterialPage />} />
-          <Route path="/materials/:id/preview" element={<div>Preview page</div>} />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route path="/admin/pending-materials" element={<AdminPendingMaterialsPage />} />
+            <Route path="/admin/materials/:id/edit" element={<AdminEditMaterialPage />} />
+            <Route path="/materials/:id/preview" element={<div>Preview page</div>} />
+          </Routes>
+        </ToastProvider>
       </MemoryRouter>,
     )
   }
@@ -90,7 +93,6 @@ describe('AdminPendingMaterialsPage', () => {
   })
 
   it('runs approval, rejection, and review download actions', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('Needs work')
     renderPage()
 
     await screen.findByText('String Warmup')
@@ -104,10 +106,32 @@ describe('AdminPendingMaterialsPage', () => {
     await openCardMenu(stringCard!)
     await userEvent.click(screen.getByRole('menuitem', { name: 'דחייה' }))
 
+    const rejectDialog = screen.getByRole('dialog')
+    await userEvent.type(screen.getByLabelText('סיבת דחייה'), 'Needs work')
+    await userEvent.click(within(rejectDialog).getByRole('button', { name: 'דחיית חומר' }))
+
     expect(downloadMaterialForReview).toHaveBeenCalledWith(2, 'strings.pdf')
     expect(approveMaterial).toHaveBeenCalledWith(2)
     expect(rejectMaterial).toHaveBeenCalledWith(2, 'Needs work')
     await waitFor(() => expect(getAdminMaterials).toHaveBeenCalledTimes(3))
+  })
+
+  it('does not reject without a reason and can cancel the dialog', async () => {
+    renderPage()
+
+    await screen.findByText('String Warmup')
+    const stringCard = screen.getByText('String Warmup').closest('article')
+    expect(stringCard).not.toBeNull()
+
+    await openCardMenu(stringCard!)
+    await userEvent.click(screen.getByRole('menuitem', { name: 'דחייה' }))
+
+    const rejectDialog = screen.getByRole('dialog')
+    expect(within(rejectDialog).getByRole('button', { name: 'דחיית חומר' })).toBeDisabled()
+
+    await userEvent.click(within(rejectDialog).getByRole('button', { name: 'ביטול' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(rejectMaterial).not.toHaveBeenCalled()
   })
 
   it('opens edit on a separate page and saves changes', async () => {

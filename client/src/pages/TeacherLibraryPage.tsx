@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
-import { downloadMaterial, getApprovedMaterials, likeMaterial } from '../api/materialsApi'
+import { downloadMaterial, getApprovedMaterials, addFavoriteMaterial, likeMaterial, removeFavoriteMaterial } from '../api/materialsApi'
 import { Button } from '../components/Button'
 import { IconButton } from '../components/IconButton'
 import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
@@ -98,6 +98,25 @@ export function TeacherLibraryPage() {
       )
     } catch (err) {
       setActionError(getApiErrorMessage(err, 'לא ניתן לסמן לייק.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleToggleFavorite(material: MaterialDto) {
+    if (busyAction) return
+
+    setBusyAction(`favorite-${material.id}`)
+    setActionError(null)
+    try {
+      const updated = material.isFavoritedByCurrentUser
+        ? await removeFavoriteMaterial(material.id)
+        : await addFavoriteMaterial(material.id)
+      setMaterials((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+    } catch (err) {
+      setActionError(getApiErrorMessage(err, 'לא ניתן לעדכן מועדפים.'))
     } finally {
       setBusyAction(null)
     }
@@ -227,6 +246,22 @@ export function TeacherLibraryPage() {
                       onClick={() => void handleDownload(material)}
                     >
                       <span aria-hidden="true">↓</span>
+                    </IconButton>
+                    <IconButton
+                      variant="favorite"
+                      label={
+                        busyAction === `favorite-${material.id}`
+                          ? material.isFavoritedByCurrentUser
+                            ? 'מסיר מהמועדפים...'
+                            : 'שומר למועדפים...'
+                          : material.isFavoritedByCurrentUser
+                            ? 'הסר מהמועדפים'
+                            : 'שמור למועדפים'
+                      }
+                      disabled={busyAction === `favorite-${material.id}`}
+                      onClick={() => void handleToggleFavorite(material)}
+                    >
+                      <span aria-hidden="true">{material.isFavoritedByCurrentUser ? '★' : '☆'}</span>
                     </IconButton>
                     <IconButton
                       variant="like"
