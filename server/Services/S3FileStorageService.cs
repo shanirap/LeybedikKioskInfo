@@ -65,6 +65,18 @@ public class S3FileStorageService : IFileStorageService
         }
     }
 
+    public async Task DeleteIfExistsAsync(string storedPath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _client.DeleteObjectAsync(_bucketName, NormalizeKey(storedPath), cancellationToken);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Missing objects are treated as already deleted.
+        }
+    }
+
     private static string BuildKey(string directoryName, string storedFileName)
     {
         var safeDirectoryName = Path.GetFileName(directoryName);

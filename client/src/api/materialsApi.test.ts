@@ -3,6 +3,7 @@ import { apiClient } from './apiClient'
 import {
   approveMaterial,
   deleteAdminMaterial,
+  deleteArchivedMaterialPermanently,
   deleteMyUploadedMaterial,
   downloadMaterial,
   downloadMaterialForReview,
@@ -119,9 +120,11 @@ describe('materials API helpers', () => {
 
     await deleteMyUploadedMaterial(1)
     await deleteAdminMaterial(2)
+    await deleteArchivedMaterialPermanently(3)
 
     expect(apiClient.delete).toHaveBeenNthCalledWith(1, '/materials/my-uploads/1')
     expect(apiClient.delete).toHaveBeenNthCalledWith(2, '/admin/materials/2')
+    expect(apiClient.delete).toHaveBeenNthCalledWith(3, '/admin/materials/3/permanent')
   })
 
   it('downloads a blob through a temporary link', async () => {

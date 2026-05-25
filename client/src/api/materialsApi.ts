@@ -77,6 +77,10 @@ export async function deleteAdminMaterial(id: number) {
   await apiClient.delete(`/admin/materials/${id}`)
 }
 
+export async function deleteArchivedMaterialPermanently(id: number) {
+  await apiClient.delete(`/admin/materials/${id}/permanent`)
+}
+
 export async function likeMaterial(id: number) {
   const { data } = await apiClient.post<MaterialDto>(`/materials/${id}/like`)
   return data

@@ -9,6 +9,8 @@ public interface IFileStorageService
         CancellationToken cancellationToken = default);
 
     Task<Stream?> OpenReadAsync(string storedPath, CancellationToken cancellationToken = default);
+
+    Task DeleteIfExistsAsync(string storedPath, CancellationToken cancellationToken = default);
 }
 
 public record StoredFileReference(string Path);

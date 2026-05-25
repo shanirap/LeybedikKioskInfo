@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/apiClient'
-import { getArchivedMaterials, restoreMaterial } from '../api/materialsApi'
+import {
+  deleteArchivedMaterialPermanently,
+  getArchivedMaterials,
+  restoreMaterial,
+} from '../api/materialsApi'
 import { Button } from '../components/Button'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { MaterialCard, MaterialCardFooter } from '../components/MaterialCard'
 import { Pager } from '../components/Pager'
 import type { MaterialDto } from '../types/material'
@@ -21,6 +26,7 @@ export function AdminArchivedMaterialsPage() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [materialToDeletePermanently, setMaterialToDeletePermanently] = useState<MaterialDto | null>(null)
 
   useEffect(() => {
     loadMaterials()
@@ -50,6 +56,22 @@ export function AdminArchivedMaterialsPage() {
       await loadMaterials()
     } catch (err) {
       setError(getApiErrorMessage(err, 'לא ניתן לשחזר את החומר.'))
+    }
+  }
+
+  async function confirmPermanentDelete() {
+    if (!materialToDeletePermanently) return
+
+    setError(null)
+    setMessage(null)
+    try {
+      await deleteArchivedMaterialPermanently(materialToDeletePermanently.id)
+      setMaterialToDeletePermanently(null)
+      setMessage('החומר נמחק לצמיתות.')
+      await loadMaterials()
+    } catch (err) {
+      setMaterialToDeletePermanently(null)
+      setError(getApiErrorMessage(err, 'לא ניתן למחוק את החומר לצמיתות.'))
     }
   }
 
@@ -143,9 +165,14 @@ export function AdminArchivedMaterialsPage() {
                     </Button>
                   }
                   tools={
-                    <Button variant="ghost" onClick={() => handlePreview(material)}>
-                      צפייה
-                    </Button>
+                    <>
+                      <Button variant="ghost" onClick={() => handlePreview(material)}>
+                        צפייה
+                      </Button>
+                      <Button variant="danger" onClick={() => setMaterialToDeletePermanently(material)}>
+                        מחיקה לצמיתות
+                      </Button>
+                    </>
                   }
                 />
               }
@@ -154,6 +181,15 @@ export function AdminArchivedMaterialsPage() {
         })}
       </div>
       <Pager page={page} pageSize={PAGE_SIZE} totalCount={totalCount} onPageChange={setPage} />
+      {materialToDeletePermanently && (
+        <ConfirmDialog
+          title="מחיקה לצמיתות"
+          message="הפעולה תמחק את החומר מהמערכת לצמיתות ולא ניתן יהיה לשחזר אותו. להמשיך?"
+          confirmLabel="מחיקה לצמיתות"
+          onConfirm={() => void confirmPermanentDelete()}
+          onCancel={() => setMaterialToDeletePermanently(null)}
+        />
+      )}
     </section>
   )
 }

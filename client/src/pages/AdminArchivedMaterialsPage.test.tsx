@@ -2,13 +2,14 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { getArchivedMaterials, restoreMaterial } from '../api/materialsApi'
+import { getArchivedMaterials, restoreMaterial, deleteArchivedMaterialPermanently } from '../api/materialsApi'
 import { materials, pagedMaterials } from '../test/fixtures'
 import { AdminArchivedMaterialsPage } from './AdminArchivedMaterialsPage'
 
 vi.mock('../api/materialsApi', () => ({
   getArchivedMaterials: vi.fn(),
   restoreMaterial: vi.fn(),
+  deleteArchivedMaterialPermanently: vi.fn(),
 }))
 
 async function expandCardDetails(card: HTMLElement) {
@@ -19,8 +20,10 @@ describe('AdminArchivedMaterialsPage', () => {
   beforeEach(() => {
     vi.mocked(getArchivedMaterials).mockReset()
     vi.mocked(restoreMaterial).mockReset()
+    vi.mocked(deleteArchivedMaterialPermanently).mockReset()
     vi.mocked(getArchivedMaterials).mockResolvedValue(pagedMaterials())
     vi.mocked(restoreMaterial).mockResolvedValue(materials[0])
+    vi.mocked(deleteArchivedMaterialPermanently).mockResolvedValue(undefined)
   })
 
   function renderPage(initialEntry = '/admin/archived-materials') {
@@ -123,5 +126,35 @@ describe('AdminArchivedMaterialsPage', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'שחזור' })[0])
 
     expect(await screen.findByText('לא ניתן לשחזר את החומר.')).toBeInTheDocument()
+  })
+
+  it('permanently deletes an archived material after confirmation', async () => {
+    vi.mocked(getArchivedMaterials)
+      .mockResolvedValueOnce(pagedMaterials())
+      .mockResolvedValueOnce(pagedMaterials([materials[1]]))
+
+    renderPage()
+
+    await screen.findByText('Rhythm Basics')
+    await userEvent.click(screen.getAllByRole('button', { name: 'מחיקה לצמיתות' })[0])
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('הפעולה תמחק את החומר מהמערכת לצמיתות ולא ניתן יהיה לשחזר אותו. להמשיך?')).toBeInTheDocument()
+
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'מחיקה לצמיתות' }))
+
+    expect(deleteArchivedMaterialPermanently).toHaveBeenCalledWith(1)
+    await waitFor(() => expect(screen.getByText('החומר נמחק לצמיתות.')).toBeInTheDocument())
+  })
+
+  it('shows an error when permanent delete fails', async () => {
+    vi.mocked(deleteArchivedMaterialPermanently).mockRejectedValue({ isAxiosError: true })
+
+    renderPage()
+
+    await screen.findByText('Rhythm Basics')
+    await userEvent.click(screen.getAllByRole('button', { name: 'מחיקה לצמיתות' })[0])
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'מחיקה לצמיתות' }))
+
+    expect(await screen.findByText('לא ניתן למחוק את החומר לצמיתות.')).toBeInTheDocument()
   })
 })

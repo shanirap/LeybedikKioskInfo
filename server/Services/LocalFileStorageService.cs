@@ -38,6 +38,15 @@ public class LocalFileStorageService : IFileStorageService
         return Task.FromResult<Stream?>(File.OpenRead(physicalPath));
     }
 
+    public Task DeleteIfExistsAsync(string storedPath, CancellationToken cancellationToken = default)
+    {
+        var physicalPath = ResolveStoragePath(storedPath);
+        if (File.Exists(physicalPath))
+            File.Delete(physicalPath);
+
+        return Task.CompletedTask;
+    }
+
     private string ResolveStoragePath(string path)
     {
         if (Path.IsPathRooted(path))

@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using LeybedikInfoKiosk.Server.Data;
 using LeybedikInfoKiosk.Server.DTOs;
 using LeybedikInfoKiosk.Server.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -1034,6 +1035,124 @@ public class ApiSmokeTests
         Assert.NotNull(logs);
         Assert.DoesNotContain(materials.Items, material => material.Id == 1);
         Assert.Contains(logs.Items, log => log.Action == "DeleteMaterialByAdmin" && log.EntityId == 1);
+    }
+
+    [Fact]
+    public async Task Admin_CanPermanentlyDeleteArchivedMaterial()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.MaterialLikes.Add(new MaterialLike
+            {
+                MaterialId = 1,
+                UserId = 2,
+                CreatedAtUtc = new DateTime(2026, 1, 2, 12, 0, 0, DateTimeKind.Utc),
+            });
+            db.MaterialDownloads.Add(new MaterialDownload
+            {
+                MaterialId = 1,
+                UserId = 2,
+                DownloadedAtUtc = new DateTime(2026, 1, 2, 12, 0, 0, DateTimeKind.Utc),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var archiveResponse = await client.DeleteAsync("/api/admin/materials/1");
+        var permanentDeleteResponse = await client.DeleteAsync("/api/admin/materials/1/permanent");
+        var archivedResponse = await client.GetAsync("/api/admin/materials/archived");
+        var auditResponse = await client.GetAsync("/api/admin/audit-logs");
+
+        Assert.Equal(HttpStatusCode.NoContent, archiveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, permanentDeleteResponse.StatusCode);
+        archivedResponse.EnsureSuccessStatusCode();
+        auditResponse.EnsureSuccessStatusCode();
+
+        var archived = await archivedResponse.Content.ReadFromJsonAsync<TestPagedResult<MaterialDto>>();
+        var logs = await auditResponse.Content.ReadFromJsonAsync<TestPagedResult<AuditLogDto>>();
+
+        Assert.NotNull(archived);
+        Assert.DoesNotContain(archived.Items, material => material.Id == 1);
+        Assert.Contains(
+            logs!.Items,
+            log => log.Action == "PermanentDeleteMaterial"
+                && log.EntityId == 1
+                && log.Details!.Contains("מחיקה לצמיתות של חומר מהארכיון"));
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Null(await db.Materials.FirstOrDefaultAsync(material => material.Id == 1));
+            Assert.Empty(await db.MaterialLikes.Where(like => like.MaterialId == 1).ToListAsync());
+            Assert.Empty(await db.MaterialDownloads.Where(download => download.MaterialId == 1).ToListAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Admin_CannotPermanentlyDeleteNonArchivedMaterial()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        var permanentDeleteResponse = await client.DeleteAsync("/api/admin/materials/1/permanent");
+
+        Assert.Equal(HttpStatusCode.Conflict, permanentDeleteResponse.StatusCode);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var material = await db.Materials.FirstOrDefaultAsync(m => m.Id == 1);
+            Assert.NotNull(material);
+            Assert.False(material!.IsDeleted);
+        }
+    }
+
+    [Fact]
+    public async Task Teacher_CannotPermanentlyDeleteArchivedMaterial()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var adminClient = factory.CreateClient();
+        await SignIn(adminClient, "admin@test.local", "Admin123!");
+        var archiveResponse = await adminClient.DeleteAsync("/api/admin/materials/1");
+        Assert.Equal(HttpStatusCode.NoContent, archiveResponse.StatusCode);
+
+        using var teacherClient = factory.CreateClient();
+        await SignIn(teacherClient, "teacher@test.local", "Teacher123!");
+        var permanentDeleteResponse = await teacherClient.DeleteAsync("/api/admin/materials/1/permanent");
+
+        Assert.Equal(HttpStatusCode.Forbidden, permanentDeleteResponse.StatusCode);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var material = await db.Materials.FirstOrDefaultAsync(m => m.Id == 1);
+            Assert.NotNull(material);
+            Assert.True(material!.IsDeleted);
+        }
+    }
+
+    [Fact]
+    public async Task Anonymous_CannotPermanentlyDeleteArchivedMaterial()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var adminClient = factory.CreateClient();
+        await SignIn(adminClient, "admin@test.local", "Admin123!");
+        var archiveResponse = await adminClient.DeleteAsync("/api/admin/materials/1");
+        Assert.Equal(HttpStatusCode.NoContent, archiveResponse.StatusCode);
+
+        using var anonymousClient = factory.CreateClient();
+        var permanentDeleteResponse = await anonymousClient.DeleteAsync("/api/admin/materials/1/permanent");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, permanentDeleteResponse.StatusCode);
     }
 
     [Fact]

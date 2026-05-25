@@ -20,7 +20,7 @@ describe('display text helpers', () => {
     expect(formatMaterialLevel('Beginner')).toBe('מתחילים')
     expect(formatMaterialLevel('Advanced')).toBe('מתקדמים')
     expect(formatAuditAction('ApproveMaterial')).toBe('אישור חומר')
-    expect(formatAuditAction('ActivateInstrument')).toBe('הפעלת כלי')
+    expect(formatAuditAction('PermanentDeleteMaterial')).toBe('מחיקה לצמיתות')
     expect(formatAuditAction('DeactivateUser')).toBe('השבתת משתמש')
     expect(formatEntityType('Instrument')).toBe('כלי נגינה')
   })

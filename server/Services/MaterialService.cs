@@ -4,6 +4,7 @@ using LeybedikInfoKiosk.Server.DTOs;
 using LeybedikInfoKiosk.Server.Models;
 using LeybedikInfoKiosk.Server.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace LeybedikInfoKiosk.Server.Services;
 
@@ -27,15 +28,18 @@ public class MaterialService
     private readonly AppDbContext _db;
     private readonly IFileStorageService _fileStorage;
     private readonly AuditLogService _auditLogService;
+    private readonly ILogger<MaterialService> _logger;
 
     public MaterialService(
         AppDbContext db,
         IFileStorageService fileStorage,
-        AuditLogService auditLogService)
+        AuditLogService auditLogService,
+        ILogger<MaterialService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _auditLogService = auditLogService;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyCollection<MaterialDto>> GetApprovedAsync(ClaimsPrincipal user)
@@ -478,6 +482,55 @@ public class MaterialService
         return ToDto(material, false);
     }
 
+    public async Task<MaterialDeleteResult> PermanentDeleteByAdminAsync(int id, int actorUserId)
+    {
+        var material = await _db.Materials.FirstOrDefaultAsync(m => m.Id == id);
+        if (material is null)
+            return MaterialDeleteResult.NotFound();
+
+        if (!material.IsDeleted)
+        {
+            return MaterialDeleteResult.NotArchived(
+                "Only archived materials can be permanently deleted.");
+        }
+
+        var materialId = material.Id;
+        var materialTitle = material.Title;
+        var storedPaths = GetDistinctStoredPaths(material.OriginalFilePath, material.ApprovedFilePath);
+
+        foreach (var storedPath in storedPaths)
+        {
+            try
+            {
+                await _fileStorage.DeleteIfExistsAsync(storedPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to delete stored file {StoredPath} during permanent delete of material {MaterialId}",
+                    storedPath,
+                    materialId);
+            }
+        }
+
+        await _auditLogService.AddAsync(
+            actorUserId,
+            "PermanentDeleteMaterial",
+            "Material",
+            materialId,
+            $"מחיקה לצמיתות של חומר מהארכיון: {materialTitle} (#{materialId}).");
+
+        var likes = await _db.MaterialLikes.Where(like => like.MaterialId == materialId).ToListAsync();
+        var downloads = await _db.MaterialDownloads.Where(download => download.MaterialId == materialId).ToListAsync();
+        _db.MaterialLikes.RemoveRange(likes);
+        _db.MaterialDownloads.RemoveRange(downloads);
+        _db.Materials.Remove(material);
+        await _db.SaveChangesAsync();
+
+        return MaterialDeleteResult.Success();
+    }
+
     public async Task<MaterialUpdateResult> UpdateOwnAsync(int id, UpdateOwnMaterialRequest request, ClaimsPrincipal user)
     {
         var userId = user.GetUserId();
@@ -773,6 +826,14 @@ public class MaterialService
         };
     }
 
+    private static IEnumerable<string> GetDistinctStoredPaths(params string?[] storedPaths)
+    {
+        return storedPaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
     private static MaterialDto ToDto(Material material, bool isLikedByCurrentUser)
     {
         return new MaterialDto(
@@ -830,6 +891,9 @@ public record MaterialDeleteResult(MaterialDeleteStatus Status, string? ErrorMes
 
     public static MaterialDeleteResult Forbidden(string? message = null) =>
         new(MaterialDeleteStatus.Forbidden, message);
+
+    public static MaterialDeleteResult NotArchived(string message) =>
+        new(MaterialDeleteStatus.NotArchived, message);
 }
 
 public enum MaterialDeleteStatus
@@ -837,6 +901,7 @@ public enum MaterialDeleteStatus
     Success,
     NotFound,
     Forbidden,
+    NotArchived,
 }
 
 public record MaterialUpdateResult(

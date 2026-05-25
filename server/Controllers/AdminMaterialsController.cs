@@ -110,4 +110,17 @@ public class AdminMaterialsController : ControllerBase
             _ => Forbid(),
         };
     }
+
+    [HttpDelete("{id:int}/permanent")]
+    public async Task<IActionResult> PermanentDelete(int id)
+    {
+        var result = await _materialService.PermanentDeleteByAdminAsync(id, User.GetUserId());
+        return result.Status switch
+        {
+            MaterialDeleteStatus.Success => NoContent(),
+            MaterialDeleteStatus.NotFound => NotFound(),
+            MaterialDeleteStatus.NotArchived => Conflict(new { message = result.ErrorMessage }),
+            _ => Forbid(),
+        };
+    }
 }
