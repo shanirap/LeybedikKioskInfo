@@ -1649,7 +1649,7 @@ public class ApiSmokeTests
         var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
 
         Assert.NotEmpty(users!);
-        Assert.All(users, user => Assert.Equal("Teacher", user.Role));
+        Assert.All(users!, user => Assert.Equal("Teacher", user.Role));
     }
 
     [Fact]

@@ -1,11 +1,6 @@
-import {
-  HubConnection,
-  HubConnectionBuilder,
-  HubConnectionState,
-  LogLevel,
-} from '@microsoft/signalr'
+import { HubConnection, HubConnectionState } from '@microsoft/signalr'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { getLikeNotificationHubUrl, getStoredAuthToken } from '../api/likeNotificationHub'
+import { createLikeNotificationConnection } from '../api/likeNotificationHub'
 import { LikeCelebrationOverlay, CELEBRATION_DURATION_MS } from '../components/LikeCelebrationOverlay'
 import { useAuth } from './useAuth'
 import {
@@ -16,16 +11,6 @@ import {
 type LikeNotificationProviderProps = {
   children: ReactNode
   connect?: typeof createLikeNotificationConnection
-}
-
-export function createLikeNotificationConnection() {
-  return new HubConnectionBuilder()
-    .withUrl(getLikeNotificationHubUrl(), {
-      accessTokenFactory: () => getStoredAuthToken() ?? '',
-    })
-    .withAutomaticReconnect()
-    .configureLogging(LogLevel.Warning)
-    .build()
 }
 
 export function LikeNotificationProvider({
@@ -51,11 +36,14 @@ export function LikeNotificationProvider({
 
   useEffect(() => {
     if (!user) {
+      if (hideTimeoutRef.current !== null) {
+        window.clearTimeout(hideTimeoutRef.current)
+        hideTimeoutRef.current = null
+      }
       if (connectionRef.current) {
         void connectionRef.current.stop()
         connectionRef.current = null
       }
-      setShowCelebration(false)
       return
     }
 
@@ -93,7 +81,7 @@ export function LikeNotificationProvider({
   return (
     <LikeNotificationContext.Provider value={{ showCelebration }}>
       {children}
-      <LikeCelebrationOverlay visible={showCelebration} />
+      <LikeCelebrationOverlay visible={showCelebration && !!user} />
     </LikeNotificationContext.Provider>
   )
 }

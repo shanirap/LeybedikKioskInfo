@@ -1,4 +1,16 @@
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
+
 const STORAGE_KEY = 'leybedik_auth'
+
+export function createLikeNotificationConnection() {
+  return new HubConnectionBuilder()
+    .withUrl(getLikeNotificationHubUrl(), {
+      accessTokenFactory: () => getStoredAuthToken() ?? '',
+    })
+    .withAutomaticReconnect()
+    .configureLogging(LogLevel.Warning)
+    .build()
+}
 
 export function getLikeNotificationHubUrl() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
