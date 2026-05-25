@@ -1,3 +1,4 @@
+
 $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
@@ -37,6 +38,34 @@ function Clear-DirectoryContents {
         Remove-Item -Recurse -Force
 }
 
+function Invoke-ProductionFrontendBuild {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ClientPath
+    )
+
+    $envLocalPath = Join-Path $ClientPath ".env.local"
+    $envLocalBackup = Join-Path $ClientPath ".env.local.__publish_hidden"
+    $hidEnvLocal = $false
+
+    Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
+
+    if (Test-Path $envLocalPath) {
+        Write-Host "Temporarily excluding client/.env.local from production build..."
+        Move-Item -LiteralPath $envLocalPath -Destination $envLocalBackup -Force
+        $hidEnvLocal = $true
+    }
+
+    try {
+        Invoke-NativeCommand { npm run build }
+    }
+    finally {
+        if ($hidEnvLocal -and (Test-Path $envLocalBackup)) {
+            Move-Item -LiteralPath $envLocalBackup -Destination $envLocalPath -Force
+        }
+    }
+}
+
 Push-Location $root
 
 try {
@@ -47,7 +76,7 @@ try {
 
         Write-Host "Building frontend..."
         Clear-DirectoryContents -Path $clientDistPath
-        Invoke-NativeCommand { npm run build }
+        Invoke-ProductionFrontendBuild -ClientPath $clientPath
     }
     finally {
         Pop-Location
