@@ -581,21 +581,7 @@ public class MaterialService
         var materialTitle = material.Title;
         var storedPaths = GetDistinctStoredPaths(material.OriginalFilePath, material.ApprovedFilePath);
 
-        foreach (var storedPath in storedPaths)
-        {
-            try
-            {
-                await _fileStorage.DeleteIfExistsAsync(storedPath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Failed to delete stored file {StoredPath} during permanent delete of material {MaterialId}",
-                    storedPath,
-                    materialId);
-            }
-        }
+        await DeleteStoredPathsIfUnreferencedAsync(storedPaths);
 
         await _auditLogService.AddAsync(
             actorUserId,
@@ -645,33 +631,76 @@ public class MaterialService
             var extension = GetNormalizedExtension(originalFileName);
             var storedFileName = $"{Guid.NewGuid():N}{extension}";
             var (fileSizeBytes, fileHash) = await ComputeFileSizeAndHashAsync(request.File);
-            var storedFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
-            material.OriginalFilePath = storedFile.Path;
-            material.OriginalFileName = originalFileName;
-            material.FileSizeBytes = fileSizeBytes;
-            material.FileHashSha256 = fileHash;
+
+            var replacedOriginalPath = material.OriginalFilePath;
+            var replacedApprovedPath = material.ApprovedFilePath;
+            StoredFileReference? replacementFile = null;
+
+            try
+            {
+                replacementFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
+                material.OriginalFilePath = replacementFile.Path;
+                material.OriginalFileName = originalFileName;
+                material.FileSizeBytes = fileSizeBytes;
+                material.FileHashSha256 = fileHash;
+
+                material.Title = request.Title.Trim();
+                material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+                material.InstrumentId = request.InstrumentId;
+                material.Level = request.Level;
+                material.Status = MaterialStatus.Pending;
+                material.ApprovedAtUtc = null;
+                material.ApprovedByUserId = null;
+                material.ApprovedFilePath = null;
+                material.ApprovedFileName = null;
+                material.RejectedAtUtc = null;
+                material.RejectedByUserId = null;
+                material.RejectionReason = null;
+
+                await _db.SaveChangesAsync();
+                await _auditLogService.AddAsync(
+                    userId,
+                    "UpdateOwnMaterial",
+                    "Material",
+                    material.Id,
+                    $"עודכן החומר שלי: {material.Title}.");
+
+                await DeleteStoredPathsIfUnreferencedAsync(
+                    new[] { replacedOriginalPath, replacedApprovedPath },
+                    material.OriginalFilePath,
+                    material.ApprovedFilePath);
+            }
+            catch
+            {
+                if (replacementFile is not null)
+                    await _fileStorage.DeleteIfExistsAsync(replacementFile.Path);
+
+                throw;
+            }
         }
+        else
+        {
+            material.Title = request.Title.Trim();
+            material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+            material.InstrumentId = request.InstrumentId;
+            material.Level = request.Level;
+            material.Status = MaterialStatus.Pending;
+            material.ApprovedAtUtc = null;
+            material.ApprovedByUserId = null;
+            material.ApprovedFilePath = null;
+            material.ApprovedFileName = null;
+            material.RejectedAtUtc = null;
+            material.RejectedByUserId = null;
+            material.RejectionReason = null;
 
-        material.Title = request.Title.Trim();
-        material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        material.InstrumentId = request.InstrumentId;
-        material.Level = request.Level;
-        material.Status = MaterialStatus.Pending;
-        material.ApprovedAtUtc = null;
-        material.ApprovedByUserId = null;
-        material.ApprovedFilePath = null;
-        material.ApprovedFileName = null;
-        material.RejectedAtUtc = null;
-        material.RejectedByUserId = null;
-        material.RejectionReason = null;
-
-        await _db.SaveChangesAsync();
-        await _auditLogService.AddAsync(
-            userId,
-            "UpdateOwnMaterial",
-            "Material",
-            material.Id,
-            $"עודכן החומר שלי: {material.Title}.");
+            await _db.SaveChangesAsync();
+            await _auditLogService.AddAsync(
+                userId,
+                "UpdateOwnMaterial",
+                "Material",
+                material.Id,
+                $"עודכן החומר שלי: {material.Title}.");
+        }
 
         var updated = await _db.Materials
             .AsNoTracking()
@@ -714,45 +743,94 @@ public class MaterialService
             var extension = GetNormalizedExtension(originalFileName);
             var storedFileName = $"{Guid.NewGuid():N}{extension}";
             var (fileSizeBytes, fileHash) = await ComputeFileSizeAndHashAsync(request.File);
-            var storedFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
-            material.OriginalFilePath = storedFile.Path;
-            material.OriginalFileName = originalFileName;
-            material.FileSizeBytes = fileSizeBytes;
-            material.FileHashSha256 = fileHash;
 
-            if (wasApproved)
+            var replacedOriginalPath = material.OriginalFilePath;
+            var replacedApprovedPath = material.ApprovedFilePath;
+            StoredFileReference? replacementFile = null;
+
+            try
             {
-                material.ApprovedFilePath = storedFile.Path;
-                material.ApprovedFileName = originalFileName;
+                replacementFile = await _fileStorage.SaveAsync(request.File, "originals", storedFileName);
+                material.OriginalFilePath = replacementFile.Path;
+                material.OriginalFileName = originalFileName;
+                material.FileSizeBytes = fileSizeBytes;
+                material.FileHashSha256 = fileHash;
+
+                if (wasApproved)
+                {
+                    material.ApprovedFilePath = replacementFile.Path;
+                    material.ApprovedFileName = originalFileName;
+                }
+
+                material.Title = request.Title.Trim();
+                material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+                material.InstrumentId = request.InstrumentId;
+                material.Level = request.Level;
+
+                if (!wasApproved)
+                {
+                    material.Status = MaterialStatus.Pending;
+                    material.ApprovedAtUtc = null;
+                    material.ApprovedByUserId = null;
+                    material.ApprovedFilePath = null;
+                    material.ApprovedFileName = null;
+                    material.RejectedAtUtc = null;
+                    material.RejectedByUserId = null;
+                    material.RejectionReason = null;
+                }
+
+                await _db.SaveChangesAsync();
+                await _auditLogService.AddAsync(
+                    actorUserId,
+                    "UpdateMaterialByAdmin",
+                    "Material",
+                    material.Id,
+                    wasApproved
+                        ? $"עודכן חומר מאושר: {material.Title}."
+                        : $"עודכן חומר לפני אישור: {material.Title}.");
+
+                await DeleteStoredPathsIfUnreferencedAsync(
+                    new[] { replacedOriginalPath, replacedApprovedPath },
+                    material.OriginalFilePath,
+                    material.ApprovedFilePath);
+            }
+            catch
+            {
+                if (replacementFile is not null)
+                    await _fileStorage.DeleteIfExistsAsync(replacementFile.Path);
+
+                throw;
             }
         }
-
-        material.Title = request.Title.Trim();
-        material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        material.InstrumentId = request.InstrumentId;
-        material.Level = request.Level;
-
-        if (!wasApproved)
+        else
         {
-            material.Status = MaterialStatus.Pending;
-            material.ApprovedAtUtc = null;
-            material.ApprovedByUserId = null;
-            material.ApprovedFilePath = null;
-            material.ApprovedFileName = null;
-            material.RejectedAtUtc = null;
-            material.RejectedByUserId = null;
-            material.RejectionReason = null;
-        }
+            material.Title = request.Title.Trim();
+            material.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+            material.InstrumentId = request.InstrumentId;
+            material.Level = request.Level;
 
-        await _db.SaveChangesAsync();
-        await _auditLogService.AddAsync(
-            actorUserId,
-            "UpdateMaterialByAdmin",
-            "Material",
-            material.Id,
-            wasApproved
-                ? $"עודכן חומר מאושר: {material.Title}."
-                : $"עודכן חומר לפני אישור: {material.Title}.");
+            if (!wasApproved)
+            {
+                material.Status = MaterialStatus.Pending;
+                material.ApprovedAtUtc = null;
+                material.ApprovedByUserId = null;
+                material.ApprovedFilePath = null;
+                material.ApprovedFileName = null;
+                material.RejectedAtUtc = null;
+                material.RejectedByUserId = null;
+                material.RejectionReason = null;
+            }
+
+            await _db.SaveChangesAsync();
+            await _auditLogService.AddAsync(
+                actorUserId,
+                "UpdateMaterialByAdmin",
+                "Material",
+                material.Id,
+                wasApproved
+                    ? $"עודכן חומר מאושר: {material.Title}."
+                    : $"עודכן חומר לפני אישור: {material.Title}.");
+        }
 
         var updated = await _db.Materials
             .AsNoTracking()
@@ -920,6 +998,28 @@ public class MaterialService
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(path => path!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task DeleteStoredPathsIfUnreferencedAsync(
+        IEnumerable<string?> candidatePaths,
+        params string?[] stillReferencedPaths)
+    {
+        var referenced = GetDistinctStoredPaths(stillReferencedPaths).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var storedPath in GetDistinctStoredPaths(candidatePaths.ToArray()))
+        {
+            if (referenced.Contains(storedPath))
+                continue;
+
+            try
+            {
+                await _fileStorage.DeleteIfExistsAsync(storedPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete unreferenced stored file {StoredPath}", storedPath);
+            }
+        }
     }
 
     private async Task<MaterialDto> ToDtoForUserAsync(Material material, int userId, bool? isLiked = null, bool? isFavorited = null)

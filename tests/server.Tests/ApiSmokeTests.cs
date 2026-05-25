@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using LeybedikInfoKiosk.Server.Data;
 using LeybedikInfoKiosk.Server.DTOs;
 using LeybedikInfoKiosk.Server.Models;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -1789,6 +1790,15 @@ public class ApiSmokeTests
         uploadResponse.EnsureSuccessStatusCode();
         var uploaded = await uploadResponse.Content.ReadFromJsonAsync<MaterialDto>();
 
+        string previousStoredPath;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            previousStoredPath = (await db.Materials.SingleAsync(m => m.Id == uploaded!.Id)).OriginalFilePath;
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+        }
+
         // Replace with a different file.
         var replacementBytes = "%PDF-1.4 replacement content xyz"u8.ToArray();
         using var updateForm = CreateUpdateForm(
@@ -1801,6 +1811,97 @@ public class ApiSmokeTests
         Assert.Equal(replacementBytes.Length, updated.FileSizeBytes);
         Assert.NotNull(updated.FileHashSha256);
         Assert.NotEqual(uploaded.FileHashSha256, updated.FileHashSha256);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            var material = await db.Materials.SingleAsync(m => m.Id == uploaded!.Id);
+
+            Assert.False(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, material.OriginalFilePath)));
+        }
+    }
+
+    [Fact]
+    public async Task Admin_UpdatePendingWithNewFile_DeletesPreviousStorageObject()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        const string previousStoredPath = "Storage/demo/pending.pdf";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+        }
+
+        using var form = CreateUpdateForm(
+            "Updated By Admin",
+            2,
+            "Advanced",
+            "Updated description",
+            "%PDF-1.4 replaced"u8.ToArray(),
+            "replaced.pdf");
+
+        var updateResponse = await client.PutAsync("/api/admin/materials/3", form);
+
+        updateResponse.EnsureSuccessStatusCode();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            var material = await db.Materials.SingleAsync(m => m.Id == 3);
+
+            Assert.False(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, material.OriginalFilePath)));
+            Assert.StartsWith("originals/", material.OriginalFilePath.Replace('\\', '/'));
+        }
+    }
+
+    [Fact]
+    public async Task Admin_UpdateApprovedWithNewFile_DeletesPreviousStorageObject()
+    {
+        await using var factory = new TestApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignIn(client, "admin@test.local", "Admin123!");
+
+        const string previousStoredPath = "Storage/demo/assigned.pdf";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+        }
+
+        using var form = CreateUpdateForm(
+            "Updated Approved File",
+            1,
+            "Advanced",
+            "Updated description",
+            "%PDF-1.4 approved replacement"u8.ToArray(),
+            "approved-replacement.pdf");
+
+        var updateResponse = await client.PutAsync("/api/admin/materials/1", form);
+
+        updateResponse.EnsureSuccessStatusCode();
+        var updated = await updateResponse.Content.ReadFromJsonAsync<MaterialDto>();
+        Assert.Equal("Approved", updated!.Status);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+            var material = await db.Materials.SingleAsync(m => m.Id == 1);
+
+            Assert.False(File.Exists(ResolveStoredFilePath(environment, previousStoredPath)));
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, material.OriginalFilePath)));
+            Assert.Equal(material.OriginalFilePath, material.ApprovedFilePath);
+            Assert.True(File.Exists(ResolveStoredFilePath(environment, "Storage/demo/unassigned.pdf")));
+        }
     }
 
     [Fact]
@@ -1862,6 +1963,18 @@ public class ApiSmokeTests
         }
 
         return form;
+    }
+
+    private static string ResolveStoredFilePath(IWebHostEnvironment environment, string storedPath)
+    {
+        if (Path.IsPathRooted(storedPath))
+            return storedPath;
+
+        var normalizedPath = storedPath.Replace('\\', '/');
+        if (normalizedPath.StartsWith("Storage/", StringComparison.OrdinalIgnoreCase))
+            return Path.Combine(environment.ContentRootPath, storedPath);
+
+        return Path.Combine(environment.ContentRootPath, "Storage", storedPath);
     }
 
     private static async Task SignIn(HttpClient client, string email, string password)
