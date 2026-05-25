@@ -19,7 +19,12 @@ services:
       Storage__S3__SecretKey: ${MINIO_ROOT_PASSWORD}
       Storage__S3__Region: ${MINIO_REGION:-us-east-1}
       Storage__S3__ForcePathStyle: "true"
-      Cors__AllowedOrigins__0: ${APP_ORIGIN}
+      Database__AutoMigrate: ${DATABASE_AUTO_MIGRATE:-false}
+      BootstrapAdmin__Enabled: ${BOOTSTRAP_ADMIN_ENABLED:-false}
+      BootstrapAdmin__Email: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BootstrapAdmin__FullName: ${BOOTSTRAP_ADMIN_FULL_NAME:-}
+      BootstrapAdmin__Password: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Cors__AllowedOrigins__0: ${APP_ORIGIN}
     depends_on:
       minio:
         condition: service_healthy
@@ -68,6 +73,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-leybedik-materials}
+      
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
