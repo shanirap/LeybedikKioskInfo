@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $clientPath = Join-Path $root "client"
 $serverPath = Join-Path $root "server"
+$serverProjectPath = Join-Path $serverPath "server.csproj"
 $clientDistPath = Join-Path $clientPath "dist"
 $wwwrootPath = Join-Path $serverPath "wwwroot"
 $publishPath = Join-Path $root "publish"
@@ -19,25 +20,41 @@ function Invoke-NativeCommand {
     }
 }
 
+function Clear-DirectoryContents {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path,
+        [string[]] $PreserveNames = @()
+    )
+
+    if (-not (Test-Path $Path)) {
+        New-Item -ItemType Directory -Path $Path | Out-Null
+        return
+    }
+
+    Get-ChildItem -LiteralPath $Path -Force |
+        Where-Object { $PreserveNames -notcontains $_.Name } |
+        Remove-Item -Recurse -Force
+}
+
 Push-Location $root
 
 try {
     Write-Host "Installing frontend dependencies..."
     Push-Location $clientPath
-    Invoke-NativeCommand { npm install }
+    try {
+        Invoke-NativeCommand { npm install }
 
-    Write-Host "Building frontend..."
-    if (Test-Path $clientDistPath) {
-        Remove-Item $clientDistPath -Recurse -Force
+        Write-Host "Building frontend..."
+        Clear-DirectoryContents -Path $clientDistPath
+        Invoke-NativeCommand { npm run build }
     }
-    Invoke-NativeCommand { npm run build }
-    Pop-Location
+    finally {
+        Pop-Location
+    }
 
     Write-Host "Copying frontend build to server/wwwroot..."
-    if (Test-Path $wwwrootPath) {
-        Remove-Item $wwwrootPath -Recurse -Force
-    }
-    New-Item -ItemType Directory -Path $wwwrootPath | Out-Null
+    Clear-DirectoryContents -Path $wwwrootPath -PreserveNames @(".gitkeep")
     Copy-Item (Join-Path $clientDistPath "*") $wwwrootPath -Recurse -Force
 
     Write-Host "Publishing backend..."
@@ -47,10 +64,15 @@ try {
         throw "A published server is running from $publishPath. Stop it with Ctrl+C before publishing again."
     }
 
+    Write-Host "Cleaning previous publish output..."
     if (Test-Path $publishPath) {
         Remove-Item $publishPath -Recurse -Force
     }
-    Invoke-NativeCommand { dotnet publish (Join-Path $serverPath "server.csproj") -c Release -o $publishPath }
+
+    Write-Host "Cleaning server build artifacts..."
+    Invoke-NativeCommand { dotnet clean $serverProjectPath -c Release }
+
+    Invoke-NativeCommand { dotnet publish $serverProjectPath -c Release -o $publishPath }
 
     Write-Host "Publish completed successfully."
     Write-Host "Output: $publishPath"

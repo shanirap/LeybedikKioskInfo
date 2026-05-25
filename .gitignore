@@ -1,6 +1,14 @@
 # Local tooling
 server/.hashgen/
 .build-check/
+
+# Generated build output
+client/node_modules/
+client/dist/
+server/bin/
+server/obj/
+tests/server.Tests/bin/
+tests/server.Tests/obj/
 publish/
 **/publish/
 

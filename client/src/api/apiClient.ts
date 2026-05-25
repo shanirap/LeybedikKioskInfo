@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios'
 
 const STORAGE_KEY = 'leybedik_auth'
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const serverMessageTranslations: Record<string, string> = {
   'Account is disabled.': 'החשבון הושבת.',
   'Account role has changed. Please sign in again.': 'תפקיד החשבון השתנה. יש להתחבר מחדש.',
@@ -33,6 +33,7 @@ const serverMessageTranslations: Record<string, string> = {
   'One or more validation errors occurred.': 'אחד או יותר מהשדות אינם תקינים.',
   'An unexpected error occurred.': 'אירעה שגיאה בלתי צפויה.',
   'The server could not complete the request.': 'השרת לא הצליח להשלים את הבקשה.',
+  'Only archived materials can be permanently deleted.': 'ניתן למחוק לצמיתות רק חומרים שנמצאים בארכיון.',
 }
 
 export const apiClient = axios.create({
